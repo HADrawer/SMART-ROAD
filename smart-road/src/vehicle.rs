@@ -27,16 +27,19 @@ impl Vehicle {
     }
 
     /// 🚦 STOP LINE CHECK
-    pub fn should_stop(&self) -> bool {
-        let road_half = (ROAD_WIDTH / 2) as f32;
+pub fn should_stop(&self) -> bool {
+    // White divider distance from center
+    const DIVIDER: f32 = 120.0;
 
-        match self.direction {
-            Direction::Up    => self.y <= (CENTER as f32 + road_half),
-            Direction::Down  => self.y >= (CENTER as f32 - road_half - 50.0),
-            Direction::Left  => self.x <= (CENTER as f32 + road_half),
-            Direction::Right => self.x >= (CENTER as f32 - road_half - 50.0),
-        }
+    match self.direction {
+        Direction::Up    => self.y <= CENTER as f32 + DIVIDER + 5.0,
+        Direction::Down  => self.y >= CENTER as f32 - DIVIDER - 55.0, 
+        Direction::Left  => self.x <= CENTER as f32 + DIVIDER + 5.0,
+        Direction::Right => self.x >= CENTER as f32 - DIVIDER - 55.0,
     }
+}
+
+
 
     /// 🔁 SMOOTH TURNING MOVEMENT
     pub fn apply_turn(&mut self, dt: f32) {
@@ -93,6 +96,7 @@ impl Vehicle {
     pub fn update(&mut self, dt: f32, can_move: bool) {
         // 🚦 STOP if intersection busy
         if !can_move && self.should_stop() {
+            // println!("Vehicle stopped at ({:.1}, {:.1}) dir={:?} route={:?}", self.x, self.y, self.direction, self.route);
             return;
         }
 
@@ -108,6 +112,7 @@ impl Vehicle {
             Direction::Left  => self.x -= self.speed * dt,
             Direction::Right => self.x += self.speed * dt,
         }
+        
     }
 
     /// 🎨 DRAW
