@@ -45,9 +45,9 @@ fn spawn_vehicle(vehicles: &mut Vec<Vehicle>, stats: &mut Stats, r: Route, dir: 
     let offset = lane * LANE_WIDTH + LANE_WIDTH/2;
 
     let (x, y) = match dir {
-        Direction::Up => ((CENTER + offset) as f32, 900.0),
-        Direction::Down => ((CENTER + offset) as f32, 0.0),
-        Direction::Left => (900.0, (CENTER + offset) as f32),
+        Direction::Up => ((CENTER + offset + 50) as f32, 900.0),
+        Direction::Down => ((CENTER + offset - 120) as f32, 0.0),
+        Direction::Left => (900.0, (CENTER + offset - 100) as f32),
         Direction::Right => (0.0, (CENTER + offset) as f32),
     };
 
