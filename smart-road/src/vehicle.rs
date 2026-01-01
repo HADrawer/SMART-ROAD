@@ -16,6 +16,7 @@ pub struct Vehicle {
 }
 
 impl Vehicle {
+    
     pub fn new(x: f32, y: f32, direction: Direction, route: Route) -> Self {
         Self {
             x,
@@ -120,5 +121,10 @@ pub fn should_stop(&self) -> bool {
         canvas.set_draw_color(Color::RGB(0, 200, 0));
         let rect = Rect::new(self.x as i32, self.y as i32, 30, 50);
         canvas.fill_rect(rect).unwrap();
+    }   
+     pub fn is_out_of_bounds(&self) -> bool {
+        self.x < -100.0 || self.x > 1000.0 || self.y < -100.0 || self.y > 1000.0
     }
+
+    
 }
