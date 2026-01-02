@@ -1,6 +1,8 @@
 use sdl2::{event::Event, keyboard::Keycode, pixels::Color};
 use std::time::{Duration, Instant};
 use rand::Rng;
+use rand::seq::SliceRandom; 
+use rand::prelude::IndexedRandom; // Add this import
 
 mod intersection;
 mod vehicle;
@@ -8,27 +10,31 @@ mod stats;
 
 use stats::{Stats, show_stats_window};
 use intersection::*;
-use vehicle::{Vehicle, Direction, Route};
+use vehicle::{Vehicle, Direction, Route };
 
 /// -2 = Far Right Turn, -1 = Right-Straight, 0 = Straight,
 /// +1 = Left-Straight, +2 = Far Left Turn
-fn lane_for_route(route: Route, dir: Direction) -> i32 {
+fn lane_for_entry(dir: Direction, route: Route) -> i32 {
     match (dir, route) {
-        (Direction::Up,    Route::Right)   => -2,
-        (Direction::Up,    Route::Straight)=> -1,
-        (Direction::Up,    Route::Left)    =>  1,
+        // From UP (South → North) - entry lanes are on the bottom side
+        (Direction::Up, Route::Right)   => 0,  // Rightmost entry lane
+        (Direction::Up, Route::Straight)=> 1,  // Middle entry lane
+        (Direction::Up, Route::Left)    => 2,  // Leftmost entry lane
 
-        (Direction::Down,  Route::Right)   =>  2,
-        (Direction::Down,  Route::Straight)=>  1,
-        (Direction::Down,  Route::Left)    => -1,
+        // From DOWN (North → South) - entry lanes are on the top side
+        (Direction::Down, Route::Right)   => 2,  // Rightmost entry lane
+        (Direction::Down, Route::Straight)=> 1,  // Middle entry lane
+        (Direction::Down, Route::Left)    => 0,  // Leftmost entry lane
 
-        (Direction::Left,  Route::Right)   =>  1,
-        (Direction::Left,  Route::Straight)=>  0,
-        (Direction::Left,  Route::Left)    => -1,
+        // From LEFT (East → West) - entry lanes are on the right side
+        (Direction::Left, Route::Right)   => 0,  // Rightmost entry lane
+        (Direction::Left, Route::Straight)=> 1,  // Middle entry lane
+        (Direction::Left, Route::Left)    => 2,  // Leftmost entry lane
 
-        (Direction::Right, Route::Right)   => -1,
-        (Direction::Right, Route::Straight)=>  0,
-        (Direction::Right, Route::Left)    =>  1,
+        // From RIGHT (West → East) - entry lanes are on the left side
+        (Direction::Right, Route::Right)   => 2,  // Rightmost entry lane
+        (Direction::Right, Route::Straight)=> 1,  // Middle entry lane
+        (Direction::Right, Route::Left)    => 0,  // Leftmost entry lane
     }
 }
 
@@ -40,15 +46,52 @@ fn is_spawn_blocked(vehicles: &[Vehicle], x: f32, y: f32) -> bool {
 }
 
 /// Unified spawner
+/// Unified spawner
+/// Unified spawner - only spawns in entry lanes
+// src/main.rs
 fn spawn_vehicle(vehicles: &mut Vec<Vehicle>, stats: &mut Stats, r: Route, dir: Direction) {
-    let lane = lane_for_route(r, dir);
-    let offset = lane * LANE_WIDTH + LANE_WIDTH/2;
-
+    let center = CENTER as f32;
+    let half_road = ROAD_WIDTH as f32 / 2.0;
+    let lane_width = LANE_WIDTH as f32;
+    
+    // Calculate lane index (0-2) based on direction and route
+    let lane_index = match (dir, r) {
+        (Direction::Left, Route::Left) => 2,
+        (Direction::Left, Route::Straight) => 1,
+        (Direction::Left, Route::Right) => 0,
+        (Direction::Right, Route::Left) => 2,
+        (Direction::Right, Route::Straight) => 1,
+        (Direction::Right, Route::Right) => 0,
+        (Direction::Up, Route::Left) => 2,
+        (Direction::Up, Route::Straight) => 1,
+        (Direction::Up, Route::Right) => 0,
+        (Direction::Down, Route::Left) => 2,
+        (Direction::Down, Route::Straight) => 1,
+        (Direction::Down, Route::Right) => 0,
+    };
+    
+    // Calculate exact spawn position using lane geometry
     let (x, y) = match dir {
-        Direction::Up => ((CENTER + offset + 50) as f32, 900.0),
-        Direction::Down => ((CENTER + offset - 120) as f32, 0.0),
-        Direction::Left => (900.0, (CENTER + offset - 100) as f32),
-        Direction::Right => (0.0, (CENTER + offset) as f32),
+        Direction::Left => {
+            // From right side, lane offset is Y coordinate
+            let lane_y = center + half_road - (lane_index as f32 + 0.5) * lane_width;
+            (900.0, lane_y)
+        },
+        Direction::Right => {
+            // From left side, lane offset is Y coordinate
+            let lane_y = center - half_road + (lane_index as f32 + 0.5) * lane_width;
+            (-100.0, lane_y)
+        },
+        Direction::Up => {
+            // From bottom, lane offset is X coordinate
+            let lane_x = center - half_road + (lane_index as f32 + 0.5) * lane_width;
+            (lane_x, 900.0)
+        },
+        Direction::Down => {
+            // From top, lane offset is X coordinate
+            let lane_x = center + half_road - (lane_index as f32 + 0.5) * lane_width;
+            (lane_x, -100.0)
+        },
     };
 
     if is_spawn_blocked(vehicles, x, y) {
@@ -57,7 +100,18 @@ fn spawn_vehicle(vehicles: &mut Vec<Vehicle>, stats: &mut Stats, r: Route, dir: 
     }
 
     println!("🚗 {:?} from {:?} at ({:.0},{:.0})", r, dir, x, y);
-    vehicles.push(Vehicle::new(x, y, dir, r));
+    
+    // Create vehicle with exact position
+    let mut vehicle = Vehicle::new(dir, r);
+    
+    // Ensure vehicle starts at calculated position
+    if !vehicle.path.is_empty() {
+        vehicle.path[0] = (x, y);
+        vehicle.x = x;
+        vehicle.y = y;
+    }
+    
+    vehicles.push(vehicle);
 
     // 📊 Stats update
     stats.total_vehicles += 1;
@@ -73,11 +127,9 @@ fn spawn_vehicle(vehicles: &mut Vec<Vehicle>, stats: &mut Stats, r: Route, dir: 
         Route::Right => stats.right_turn += 1,
     }
 }
-
 //// =========================================================
 
 fn main() {
-
     let mut vehicles: Vec<Vehicle> = vec![];
     let mut stats = Stats::new();
 
@@ -92,7 +144,7 @@ fn main() {
     let mut events = sdl.event_pump().unwrap();
 
     let routes = [Route::Right, Route::Straight, Route::Left];
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng(); // Use the new method name
 
     let mut last_frame = Instant::now();
     let mut last_spawn = Instant::now();
@@ -120,16 +172,16 @@ fn main() {
                 }
 
                 Event::KeyDown{ keycode: Some(Keycode::Up), repeat: false, .. } => {
-                    spawn_vehicle(&mut vehicles, &mut stats, routes[rng.gen_range(0..3)], Direction::Up);
+                    spawn_vehicle(&mut vehicles, &mut stats, routes[rng.random_range(0..3)], Direction::Up); // Use random_range
                 }
                 Event::KeyDown{ keycode: Some(Keycode::Down), repeat: false, .. } => {
-                    spawn_vehicle(&mut vehicles, &mut stats, routes[rng.gen_range(0..3)], Direction::Down);
+                    spawn_vehicle(&mut vehicles, &mut stats, routes[rng.random_range(0..3)], Direction::Down);
                 }
                 Event::KeyDown{ keycode: Some(Keycode::Left), repeat: false, .. } => {
-                    spawn_vehicle(&mut vehicles, &mut stats, routes[rng.gen_range(0..3)], Direction::Left);
+                    spawn_vehicle(&mut vehicles, &mut stats, routes[rng.random_range(0..3)], Direction::Left);
                 }
                 Event::KeyDown{ keycode: Some(Keycode::Right), repeat: false, .. } => {
-                    spawn_vehicle(&mut vehicles, &mut stats, routes[rng.gen_range(0..3)], Direction::Right);
+                    spawn_vehicle(&mut vehicles, &mut stats, routes[rng.random_range(0..3)], Direction::Right);
                 }
 
                 _ => {}
@@ -138,24 +190,16 @@ fn main() {
 
         // AUTO SPAWN -------------------------
         if auto_spawn && last_spawn.elapsed().as_secs_f32() > 0.7 {
-            let r = routes[rng.gen_range(0..3)];
-            let d = [Direction::Up, Direction::Down, Direction::Left, Direction::Right][rng.gen_range(0..4)];
+            let r = *routes.choose(&mut rng).unwrap();
+            let d = *[Direction::Up, Direction::Down, Direction::Left, Direction::Right]
+                .choose(&mut rng).unwrap();
+            
             spawn_vehicle(&mut vehicles, &mut stats, r, d);
             last_spawn = Instant::now();
         }
 
-        // UPDATE -----------------------------
         for v in &mut vehicles {
-            if v.should_stop() && intersection_busy {
-                v.update(dt, false);
-            } else {
-                intersection_busy = true;
-                v.update(dt, true);
-            }
-
-            if v.is_out_of_bounds() {
-                intersection_busy = false;
-            }
+            v.update(dt);
         }
 
         // RENDER -----------------------------

@@ -1,5 +1,5 @@
 use sdl2::{rect::Rect, pixels::Color, render::Canvas, video::Window};
-use crate::intersection::{CENTER, ROAD_WIDTH, LANE_WIDTH, in_intersection};
+use crate::intersection::{CENTER, ROAD_WIDTH, LANE_WIDTH, HALF_ROAD};
 
 #[derive(Clone, Copy, Debug)]
 pub enum Direction { Up, Down, Left, Right }
@@ -11,110 +11,56 @@ pub struct Vehicle {
     pub x: f32,
     pub y: f32,
     pub speed: f32,
-    pub direction: Direction,
-    pub route: Route,
+    pub path: Vec<(f32, f32)>,
+    pub current_target: usize,
 }
 
 impl Vehicle {
     
-    pub fn new(x: f32, y: f32, direction: Direction, route: Route) -> Self {
-        Self {
-            x,
-            y,
-            direction,
-            route,
-            speed: 140.0,
-        }
-    }
+    pub fn new(direction: Direction, route: Route) -> Self {
+    let path = build_path(direction, route);
+    let (x, y) = path[0];
 
-    /// 🚦 STOP LINE CHECK
-pub fn should_stop(&self) -> bool {
-    // White divider distance from center
-    const DIVIDER: f32 = 120.0;
-
-    match self.direction {
-        Direction::Up    => self.y <= CENTER as f32 + DIVIDER + 5.0,
-        Direction::Down  => self.y >= CENTER as f32 - DIVIDER - 55.0, 
-        Direction::Left  => self.x <= CENTER as f32 + DIVIDER + 5.0,
-        Direction::Right => self.x >= CENTER as f32 - DIVIDER - 55.0,
+    Self {
+        x,
+        y,
+        speed: 140.0,
+        path,
+        current_target: 1,
     }
 }
 
 
 
-    /// 🔁 SMOOTH TURNING MOVEMENT
-    pub fn apply_turn(&mut self, dt: f32) {
-        let turn_speed = self.speed * 0.7 * dt;
-        let lane_offset = LANE_WIDTH as f32;
 
-        match (self.direction, self.route) {
 
-            // From Bottom going Up
-            (Direction::Up, Route::Right) => {
-                self.x += turn_speed;
-                if self.x >= CENTER as f32 + lane_offset { self.direction = Direction::Right; }
-            }
-            (Direction::Up, Route::Left) => {
-                self.x -= turn_speed;
-                if self.x <= CENTER as f32 - lane_offset { self.direction = Direction::Left; }
-            }
-
-            // From Top going Down
-            (Direction::Down, Route::Right) => {
-                self.x -= turn_speed;
-                if self.x <= CENTER as f32 - lane_offset { self.direction = Direction::Left; }
-            }
-            (Direction::Down, Route::Left) => {
-                self.x += turn_speed;
-                if self.x >= CENTER as f32 + lane_offset { self.direction = Direction::Right; }
-            }
-
-            // From Left going Right
-            (Direction::Left, Route::Right) => {
-                self.y -= turn_speed;
-                if self.y <= CENTER as f32 - lane_offset { self.direction = Direction::Up; }
-            }
-            (Direction::Left, Route::Left) => {
-                self.y += turn_speed;
-                if self.y >= CENTER as f32 + lane_offset { self.direction = Direction::Down; }
-            }
-
-            // From Right going Left
-            (Direction::Right, Route::Right) => {
-                self.y += turn_speed;
-                if self.y >= CENTER as f32 + lane_offset { self.direction = Direction::Down; }
-            }
-            (Direction::Right, Route::Left) => {
-                self.y -= turn_speed;
-                if self.y <= CENTER as f32 - lane_offset { self.direction = Direction::Up; }
-            }
-
-            _ => {} // Straight -> nothing
-        }
-    }
+    
 
     /// 🚗 CAR UPDATE LOOP
-    pub fn update(&mut self, dt: f32, can_move: bool) {
-        // 🚦 STOP if intersection busy
-        if !can_move && self.should_stop() {
-            // println!("Vehicle stopped at ({:.1}, {:.1}) dir={:?} route={:?}", self.x, self.y, self.direction, self.route);
+    pub fn update(&mut self, dt: f32) {
+        
+        if self.current_target >= self.path.len() {
             return;
         }
+        let (tx, ty) = self.path[self.current_target];
 
-        // 🔁 Turn logic
-        if in_intersection(self.x, self.y) && self.route != Route::Straight {
-            self.apply_turn(dt);
-        }
+        let dx = tx - self.x;
+        let dy = ty - self.y;
+        let dist = (dx*dx + dy*dy).sqrt();
 
-        // ➡️ Move based on direction
-        match self.direction {
-            Direction::Up    => self.y -= self.speed * dt,
-            Direction::Down  => self.y += self.speed * dt,
-            Direction::Left  => self.x -= self.speed * dt,
-            Direction::Right => self.x += self.speed * dt,
-        }
+       if dist < self.speed * dt {
+        self.current_target += 1;
+        return;
+    }
+
+    self.x += dx / dist * self.speed * dt;
+    self.y += dy / dist * self.speed * dt;
+    
+
+        
         
     }
+   
 
     /// 🎨 DRAW
     pub fn draw(&self, canvas: &mut Canvas<Window>) {
@@ -125,6 +71,126 @@ pub fn should_stop(&self) -> bool {
      pub fn is_out_of_bounds(&self) -> bool {
         self.x < -100.0 || self.x > 1000.0 || self.y < -100.0 || self.y > 1000.0
     }
-
     
+
+}
+
+pub fn build_path(dir: Direction, route: Route) -> Vec<(f32, f32)> {
+    let center = CENTER as f32;
+    let road_half = ROAD_WIDTH as f32 / 2.0;
+    let lane_center = LANE_WIDTH as f32 / 2.0;
+    
+    match (dir, route) {
+        // From LEFT (right side) - entry lanes
+        (Direction::Left, Route::Left) => vec![
+            // Start in left turn lane
+            (900.0, center + road_half - LANE_WIDTH as f32 * 2.5),  
+            // Approach intersection in a straight line
+            (center + 200.0, center + road_half - LANE_WIDTH as f32 * 2.5),
+            // Turn left
+            (center + 60.0, center),
+            // Exit going up
+            (center + 60.0, -100.0),
+        ],
+        (Direction::Left, Route::Straight) => vec![
+            // Start in straight lane
+            (900.0, center + road_half - LANE_WIDTH as f32 * 1.5),  
+            // Go straight through intersection
+            (-100.0, center + road_half - LANE_WIDTH as f32 * 1.5),
+        ],
+        (Direction::Left, Route::Right) => vec![
+            // Start in right turn lane
+            (900.0, center + road_half - LANE_WIDTH as f32 * 0.5),  
+            // Approach intersection in a straight line
+            (center + 200.0, center + road_half - LANE_WIDTH as f32 * 0.5),
+            // Turn right
+            (center, center + 60.0),
+            // Exit going down
+            (center, 1000.0),
+        ],
+
+        // From RIGHT (left side) - entry lanes
+        (Direction::Right, Route::Left) => vec![
+            // Start in left turn lane
+            (-100.0, center - road_half + LANE_WIDTH as f32 * 2.5),  
+            // Approach intersection in a straight line
+            (center - 200.0, center - road_half + LANE_WIDTH as f32 * 2.5),
+            // Turn left
+            (center - 60.0, center),
+            // Exit going down
+            (center - 60.0, 1000.0),
+        ],
+        (Direction::Right, Route::Straight) => vec![
+            // Start in straight lane
+            (-100.0, center - road_half + LANE_WIDTH as f32 * 1.5),  
+            // Go straight through intersection
+            (1000.0, center - road_half + LANE_WIDTH as f32 * 1.5),
+        ],
+        (Direction::Right, Route::Right) => vec![
+            // Start in right turn lane
+            (-100.0, center - road_half + LANE_WIDTH as f32 * 0.5),  
+            // Approach intersection in a straight line
+            (center - 200.0, center - road_half + LANE_WIDTH as f32 * 0.5),
+            // Turn right
+            (center, center - 60.0),
+            // Exit going up
+            (center, -100.0),
+        ],
+
+        // From UP (bottom side) - entry lanes
+        (Direction::Up, Route::Left) => vec![
+            // Start in left turn lane
+            (center - road_half + LANE_WIDTH as f32 * 2.5, 900.0),  
+            // Approach intersection in a straight line
+            (center - road_half + LANE_WIDTH as f32 * 2.5, center + 200.0),
+            // Turn left
+            (center, center - 60.0),
+            // Exit going left
+            (-100.0, center - 60.0),
+        ],
+        (Direction::Up, Route::Straight) => vec![
+            // Start in straight lane
+            (center - road_half + LANE_WIDTH as f32 * 1.5, 900.0),  
+            // Go straight through intersection
+            (center - road_half + LANE_WIDTH as f32 * 1.5, -100.0),
+        ],
+        (Direction::Up, Route::Right) => vec![
+            // Start in right turn lane
+            (center - road_half + LANE_WIDTH as f32 * 0.5, 900.0),  
+            // Approach intersection in a straight line
+            (center - road_half + LANE_WIDTH as f32 * 0.5, center + 200.0),
+            // Turn right
+            (center - 60.0, center),
+            // Exit going right
+            (1000.0, center - 60.0),
+        ],
+
+        // From DOWN (top side) - entry lanes
+        (Direction::Down, Route::Left) => vec![
+            // Start in left turn lane
+            (center + road_half - LANE_WIDTH as f32 * 2.5, -100.0),  
+            // Approach intersection in a straight line
+            (center + road_half - LANE_WIDTH as f32 * 2.5, center - 200.0),
+            // Turn left
+            (center, center + 60.0),
+            // Exit going right
+            (1000.0, center + 60.0),
+        ],
+        (Direction::Down, Route::Straight) => vec![
+            // Start in straight lane
+            (center + road_half - LANE_WIDTH as f32 * 1.5, -100.0),  
+            // Go straight through intersection
+            (center + road_half - LANE_WIDTH as f32 * 1.5, 1000.0),
+        ],
+        (Direction::Down, Route::Right) => vec![
+            // Start in right turn lane
+            (center + road_half - LANE_WIDTH as f32 * 0.5, -100.0),  
+            // Approach intersection in a straight line
+            (center + road_half - LANE_WIDTH as f32 * 0.5, center - 200.0),
+            // Turn right
+            (center + 60.0, center),
+            // Exit going left
+            (-100.0, center + 60.0),
+        ],
+    }
 }
