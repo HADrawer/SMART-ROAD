@@ -14,11 +14,7 @@ use vehicle::{Vehicle, Direction, Route };
 
 
 /// Prevent stacking on spawn
-fn is_spawn_blocked(vehicles: &[Vehicle], x: f32, y: f32) -> bool {
-    vehicles
-        .iter()
-        .any(|v| (v.x - x).abs() < 40.0 && (v.y - y).abs() < 40.0)
-}
+
 
 /// Unified spawner
 /// Unified spawner
@@ -69,10 +65,7 @@ fn spawn_vehicle(vehicles: &mut Vec<Vehicle>, stats: &mut Stats, r: Route, dir: 
         },
     };
 
-    if is_spawn_blocked(vehicles, x, y) {
-        println!("🚫 Spawn blocked — lane occupied!");
-        return;
-    }
+    
 
     println!("🚗 {:?} from {:?} at ({:.0},{:.0})", r, dir, x, y);
     
