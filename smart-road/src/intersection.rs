@@ -11,11 +11,7 @@ pub const ROAD_WIDTH: i32 = LANE_WIDTH * TOTAL_LANES;
 pub const CENTER: i32 = 450;
 pub const HALF_ROAD: i32 = ROAD_WIDTH / 2;
 
-pub fn lane_center_offset(lane_index: i32) -> f32 {
-    // lane_index: 0-2 for entry lanes (from direction perspective)
-    // Returns offset from road edge to lane center
-    (lane_index as f32 + 0.5) * LANE_WIDTH as f32
-}
+
 
 pub fn draw(canvas: &mut Canvas<Window>) {
     // === Step 1: Entry + Exit Roads ===

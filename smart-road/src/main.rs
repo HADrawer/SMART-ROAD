@@ -12,31 +12,6 @@ use stats::{Stats, show_stats_window};
 use intersection::*;
 use vehicle::{Vehicle, Direction, Route };
 
-/// -2 = Far Right Turn, -1 = Right-Straight, 0 = Straight,
-/// +1 = Left-Straight, +2 = Far Left Turn
-fn lane_for_entry(dir: Direction, route: Route) -> i32 {
-    match (dir, route) {
-        // From UP (South → North) - entry lanes are on the bottom side
-        (Direction::Up, Route::Right)   => 0,  // Rightmost entry lane
-        (Direction::Up, Route::Straight)=> 1,  // Middle entry lane
-        (Direction::Up, Route::Left)    => 2,  // Leftmost entry lane
-
-        // From DOWN (North → South) - entry lanes are on the top side
-        (Direction::Down, Route::Right)   => 2,  // Rightmost entry lane
-        (Direction::Down, Route::Straight)=> 1,  // Middle entry lane
-        (Direction::Down, Route::Left)    => 0,  // Leftmost entry lane
-
-        // From LEFT (East → West) - entry lanes are on the right side
-        (Direction::Left, Route::Right)   => 0,  // Rightmost entry lane
-        (Direction::Left, Route::Straight)=> 1,  // Middle entry lane
-        (Direction::Left, Route::Left)    => 2,  // Leftmost entry lane
-
-        // From RIGHT (West → East) - entry lanes are on the left side
-        (Direction::Right, Route::Right)   => 2,  // Rightmost entry lane
-        (Direction::Right, Route::Straight)=> 1,  // Middle entry lane
-        (Direction::Right, Route::Left)    => 0,  // Leftmost entry lane
-    }
-}
 
 /// Prevent stacking on spawn
 fn is_spawn_blocked(vehicles: &[Vehicle], x: f32, y: f32) -> bool {
