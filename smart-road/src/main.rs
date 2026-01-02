@@ -43,15 +43,15 @@ fn spawn_vehicle(vehicles: &mut Vec<Vehicle>, stats: &mut Stats, r: Route, dir: 
     
     // Calculate exact spawn position using lane geometry
     let (x, y) = match dir {
-        Direction::Left => {
+        Direction::Right => {
             // From right side, lane offset is Y coordinate
             let lane_y = center + half_road - (lane_index as f32 + 0.5) * lane_width;
-            (900.0, lane_y)
+            (-100.0, lane_y)
         },
-        Direction::Right => {
+        Direction::Left => {
             // From left side, lane offset is Y coordinate
             let lane_y = center - half_road + (lane_index as f32 + 0.5) * lane_width;
-            (-100.0, lane_y)
+            (900.0, lane_y)
         },
         Direction::Up => {
             // From bottom, lane offset is X coordinate
@@ -145,11 +145,11 @@ fn main() {
                 Event::KeyDown{ keycode: Some(Keycode::Down), repeat: false, .. } => {
                     spawn_vehicle(&mut vehicles, &mut stats, routes[rng.random_range(0..3)], Direction::Down);
                 }
-                Event::KeyDown{ keycode: Some(Keycode::Left), repeat: false, .. } => {
-                    spawn_vehicle(&mut vehicles, &mut stats, routes[rng.random_range(0..3)], Direction::Left);
-                }
                 Event::KeyDown{ keycode: Some(Keycode::Right), repeat: false, .. } => {
                     spawn_vehicle(&mut vehicles, &mut stats, routes[rng.random_range(0..3)], Direction::Right);
+                }
+                Event::KeyDown{ keycode: Some(Keycode::Left), repeat: false, .. } => {
+                    spawn_vehicle(&mut vehicles, &mut stats, routes[rng.random_range(0..3)], Direction::Left);
                 }
 
                 _ => {}

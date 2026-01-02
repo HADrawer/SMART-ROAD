@@ -82,7 +82,7 @@ pub fn build_path(dir: Direction, route: Route) -> Vec<(f32, f32)> {
     
     match (dir, route) {
         // From LEFT (right side) - entry lanes
-        (Direction::Left, Route::Left) => vec![
+        (Direction::Right, Route::Left) => vec![
             // Start in left turn lane
             (900.0, center + road_half - LANE_WIDTH as f32 * 2.5),  
             // Approach intersection in a straight line
@@ -92,13 +92,13 @@ pub fn build_path(dir: Direction, route: Route) -> Vec<(f32, f32)> {
             // Exit going up
             (center + 60.0, -100.0),
         ],
-        (Direction::Left, Route::Straight) => vec![
-            // Start in straight lane
-            (900.0, center + road_half - LANE_WIDTH as f32 * 1.5),  
+        (Direction::Right, Route::Straight) => vec![
+           // Start in straight lane
+            (-100.0, center + road_half - LANE_WIDTH as f32 * 1.5),  
             // Go straight through intersection
-            (-100.0, center + road_half - LANE_WIDTH as f32 * 1.5),
+            (1000.0, center + road_half - LANE_WIDTH as f32 * 1.5),
         ],
-        (Direction::Left, Route::Right) => vec![
+        (Direction::Right, Route::Right) => vec![
             // Start in right turn lane
             (900.0, center + road_half - LANE_WIDTH as f32 * 0.5),  
             // Approach intersection in a straight line
@@ -110,7 +110,7 @@ pub fn build_path(dir: Direction, route: Route) -> Vec<(f32, f32)> {
         ],
 
         // From RIGHT (left side) - entry lanes
-        (Direction::Right, Route::Left) => vec![
+        (Direction::Left, Route::Left) => vec![
             // Start in left turn lane
             (-100.0, center - road_half + LANE_WIDTH as f32 * 2.5),  
             // Approach intersection in a straight line
@@ -120,13 +120,14 @@ pub fn build_path(dir: Direction, route: Route) -> Vec<(f32, f32)> {
             // Exit going down
             (center - 60.0, 1000.0),
         ],
-        (Direction::Right, Route::Straight) => vec![
+        (Direction::Left, Route::Straight) => vec![
             // Start in straight lane
-            (-100.0, center - road_half + LANE_WIDTH as f32 * 1.5),  
+            (900.0, center - road_half + LANE_WIDTH as f32 * 1.5),  
             // Go straight through intersection
-            (1000.0, center - road_half + LANE_WIDTH as f32 * 1.5),
+            (-100.0, center - road_half + LANE_WIDTH as f32 * 1.5),
+           
         ],
-        (Direction::Right, Route::Right) => vec![
+        (Direction::Left, Route::Right) => vec![
             // Start in right turn lane
             (-100.0, center - road_half + LANE_WIDTH as f32 * 0.5),  
             // Approach intersection in a straight line
