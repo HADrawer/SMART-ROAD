@@ -6,3 +6,5 @@ src\main.rs:
 src\intersection.rs:
 src\vehicle.rs:
 src\stats.rs:
+
+# env-dep:CARGO_MANIFEST_DIR=C:\\Users\\faisa\\OneDrive\\Desktop\\reboot01 projects\\SMART-ROAD\\smart-road

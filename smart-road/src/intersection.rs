@@ -52,7 +52,7 @@ canvas.fill_rect(Rect::new(
 
 
     // === Step 2: Intersection block (clean, no lines crossing middle) ===
-    canvas.set_draw_color(Color::RGB(60, 60, 60)); 
+    canvas.set_draw_color(Color::RGB(120, 40, 40)); 
     canvas.fill_rect(Rect::new(
         CENTER - 120,
         CENTER - 120,

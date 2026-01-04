@@ -3,6 +3,10 @@ use std::time::{Duration, Instant};
 use rand::Rng;
 use rand::seq::SliceRandom; 
 use rand::prelude::IndexedRandom; // Add this import
+use sdl2::image::{InitFlag, LoadTexture};
+use std::path::PathBuf;
+use std::collections::HashMap;
+use sdl2::render::Texture;
 
 mod intersection;
 mod vehicle;
@@ -12,6 +16,7 @@ use stats::{Stats, show_stats_window};
 use intersection::*;
 use vehicle::{Vehicle, Direction, Route };
 
+type CarTextures<'a> = HashMap<(usize, Direction), Texture<'a>>;
 
 /// Prevent stacking on spawn
 
@@ -55,12 +60,12 @@ fn spawn_vehicle(vehicles: &mut Vec<Vehicle>, stats: &mut Stats, r: Route, dir: 
         },
         Direction::Up => {
             // From bottom, lane offset is X coordinate
-            let lane_x = center - half_road + (lane_index as f32 + 0.5) * lane_width;
+            let lane_x = center + half_road - (lane_index as f32 + 0.5) * lane_width;
             (lane_x, 900.0)
         },
         Direction::Down => {
             // From top, lane offset is X coordinate
-            let lane_x = center + half_road - (lane_index as f32 + 0.5) * lane_width;
+            let lane_x = center - half_road + (lane_index as f32 + 0.5) * lane_width;
             (lane_x, -100.0)
         },
     };
@@ -70,8 +75,8 @@ fn spawn_vehicle(vehicles: &mut Vec<Vehicle>, stats: &mut Stats, r: Route, dir: 
     println!("🚗 {:?} from {:?} at ({:.0},{:.0})", r, dir, x, y);
     
     // Create vehicle with exact position
-    let mut vehicle = Vehicle::new(dir, r);
-    
+let car_id = rand::rng().random_range(1..=4);
+let mut vehicle = Vehicle::new(dir, r, car_id);    
     // Ensure vehicle starts at calculated position
     if !vehicle.path.is_empty() {
         vehicle.path[0] = (x, y);
@@ -98,32 +103,75 @@ fn spawn_vehicle(vehicles: &mut Vec<Vehicle>, stats: &mut Stats, r: Route, dir: 
 //// =========================================================
 
 fn main() {
+    
     let mut vehicles: Vec<Vehicle> = vec![];
     let mut stats = Stats::new();
 
+ // === SDL INIT ===
     let sdl = sdl2::init().unwrap();
-    let window = sdl.video().unwrap()
+    let video = sdl.video().unwrap();
+    
+    sdl2::image::init(InitFlag::PNG).unwrap();
+    let window = video
         .window("Smart Intersection", 900, 900)
         .position_centered()
         .build()
         .unwrap();
 
-    let mut canvas = window.into_canvas().present_vsync().build().unwrap();
+  
+  let mut canvas = window.into_canvas().present_vsync().build().unwrap();
+let texture_creator = canvas.texture_creator();
+// === ADDED ===
+let mut car_textures: CarTextures = HashMap::new();
+
+for car_id in 1..=4 {
+    for dir in [
+        Direction::Up,
+        Direction::Down,
+        Direction::Left,
+        Direction::Right,
+    ] {
+        let filename = format!(
+            "car{}-{}.png",
+            car_id,
+            match dir {
+                Direction::Up => "up",
+                Direction::Down => "down",
+                Direction::Left => "left",
+                Direction::Right => "right",
+            }
+        );
+
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("assests")
+            .join(&filename);
+
+        let texture = texture_creator
+            .load_texture(&path)
+            .expect("Failed to load car texture");
+
+        car_textures.insert((car_id, dir), texture);
+    }
+}
+
+
+
     let mut events = sdl.event_pump().unwrap();
 
     let routes = [Route::Right, Route::Straight, Route::Left];
-    let mut rng = rand::rng(); // Use the new method name
+    let mut rng = rand::rng();
 
     let mut last_frame = Instant::now();
     let mut last_spawn = Instant::now();
     let mut auto_spawn = false;
-    let mut intersection_busy = false;
 
     'run: loop {
         let dt = last_frame.elapsed().as_secs_f32();
         last_frame = Instant::now();
         stats.runtime += dt;
-
+    
+    let mut intersection_busy = false;
+     
         // INPUT ------------------------------
         for evt in events.poll_iter() {
             match evt {
@@ -176,7 +224,7 @@ fn main() {
         draw(&mut canvas);
 
         for v in &vehicles {
-            v.draw(&mut canvas);
+v.draw(&mut canvas, &car_textures);
         }
 
         canvas.present();
