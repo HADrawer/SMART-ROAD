@@ -5,7 +5,7 @@ use std::collections::HashMap;
 // 🔑 Import grid constants from main.rs (crate root)
 use crate::{TILE_SIZE, GRID_W, GRID_H, MID_TILE, ROAD_HALF_TILES};
 const INTERSECTION_MIN: i32 = MID_TILE - ROAD_HALF_TILES;
-const INTERSECTION_MAX: i32 = MID_TILE + ROAD_HALF_TILES;
+const INTERSECTION_MAX: i32 = MID_TILE + ROAD_HALF_TILES ;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Direction {
@@ -88,23 +88,23 @@ fn exit_lane_tile(dir: Direction, route: Route) -> i32 {
 
         // FROM EAST → exiting S / W / N
         Direction::Left => match route {
-            Route::Left     => MID_TILE + 2, // SOUTH
+            Route::Left     => MID_TILE - 10, // SOUTH
             Route::Straight => MID_TILE - 2, // WEST
-            Route::Right    => MID_TILE - 2, // NORTH
+            Route::Right    => MID_TILE + 10, // NORTH
         },
 
         // FROM SOUTH → exiting E / N / W
         Direction::Up => match route {
-            Route::Left     => MID_TILE + 2, // EAST
+            Route::Left     => MID_TILE - 12, // EAST
             Route::Straight => MID_TILE - 2, // NORTH
-            Route::Right    => MID_TILE - 2, // WEST
+            Route::Right    => MID_TILE + 10, // WEST
         },
 
         // FROM WEST → exiting N / E / S
         Direction::Right => match route {
-            Route::Left     => MID_TILE - 2, // NORTH
+            Route::Left     => MID_TILE - 10, // NORTH
             Route::Straight => MID_TILE + 2, // EAST
-            Route::Right    => MID_TILE + 2, // SOUTH
+            Route::Right    => MID_TILE + 10, // SOUTH
         },
     }
 }
@@ -240,45 +240,135 @@ pub fn build_path(dir: Direction, route: Route) -> Vec<(f32, f32)> {
     let mut tiles = Vec::new();
 
     match dir {
-        Direction::Up => {
-            tiles.push((entry, GRID_H + 1));
-            tiles.push((entry, INTERSECTION_MAX));
-            match route {
-                Route::Straight => tiles.push((entry, -2)),
-                Route::Left => tiles.push((exit, INTERSECTION_MAX)),
-                Route::Right => tiles.push((exit, INTERSECTION_MAX)),
-            }
-        }
+       Direction::Up => {
+    // 1️⃣ spawn outside
+    tiles.push((entry, GRID_H + 1));
 
-        Direction::Down => {
+    // 2️⃣ enter intersection vertically
+    tiles.push((entry, INTERSECTION_MAX));
+
+    match route {
+        // 3️⃣ straight continues vertically
+        Route::Straight => {
             tiles.push((entry, -2));
+        }
+
+        // 4️⃣ LEFT TURN: vertical → horizontal → exit
+        Route::Left => {
+            // go UP to turning row
+            tiles.push((entry, INTERSECTION_MAX-4));
+
+            // then go LEFT into west exit lanes
+            tiles.push((exit, INTERSECTION_MAX-4));
+        }
+
+        // 5️⃣ RIGHT TURN: vertical → horizontal → exit
+        Route::Right => {
+            // go UP to turning row
+            tiles.push((entry, INTERSECTION_MAX));
+
+            // then go RIGHT into east exit lanes
+            tiles.push((exit, INTERSECTION_MAX));
+        }
+    }
+}
+       Direction::Down => {
+    // 1️⃣ spawn above screen
+    tiles.push((entry, -2));
+
+    // 2️⃣ enter intersection vertically
+    tiles.push((entry, INTERSECTION_MIN));
+
+    match route {
+        // 3️⃣ straight continues down
+        Route::Straight => {
+            tiles.push((entry, GRID_H + 1));
+        }
+
+        // 4️⃣ LEFT TURN → go RIGHT (east)
+        Route::Left => {
+            // go DOWN to turning row
             tiles.push((entry, INTERSECTION_MIN));
-            match route {
-                Route::Straight => tiles.push((entry, GRID_H + 1)),
-                Route::Left => tiles.push((exit, INTERSECTION_MIN)),
-                Route::Right => tiles.push((exit, INTERSECTION_MIN)),
-            }
+
+            // then go RIGHT into east exit lanes
+            tiles.push((exit, INTERSECTION_MIN));
         }
 
-        Direction::Left => {
-            tiles.push((GRID_W + 1, entry));
-            tiles.push((INTERSECTION_MIN, entry));
-            match route {
-                Route::Straight => tiles.push((-2, entry)),
-                Route::Left => tiles.push((INTERSECTION_MIN, exit)),
-                Route::Right => tiles.push((INTERSECTION_MIN, exit)),
-            }
-        }
+        // 5️⃣ RIGHT TURN → go LEFT (west)
+        Route::Right => {
+            // go DOWN to turning row
+            tiles.push((entry, INTERSECTION_MIN+4));
 
-        Direction::Right => {
+            // then go LEFT into west exit lanes
+            tiles.push((exit, INTERSECTION_MIN+4));
+        }
+    }
+}
+
+       Direction::Left => {
+    // 1️⃣ spawn right of screen
+    tiles.push((GRID_W + 1, entry));
+
+    // 2️⃣ enter intersection horizontally
+    tiles.push((INTERSECTION_MAX, entry));
+
+    match route {
+        // 3️⃣ straight continues left
+        Route::Straight => {
             tiles.push((-2, entry));
-            tiles.push((INTERSECTION_MIN, entry));
-            match route {
-                Route::Straight => tiles.push((GRID_W + 1, entry)),
-                Route::Left => tiles.push((INTERSECTION_MIN, exit)),
-                Route::Right => tiles.push((INTERSECTION_MIN, exit)),
-            }
         }
+
+        // 4️⃣ LEFT TURN → go DOWN (south)
+        Route::Left => {
+            // go LEFT to turning column
+            tiles.push((INTERSECTION_MAX, entry));
+
+            // then go DOWN into south exit lanes
+            tiles.push((INTERSECTION_MAX, exit));
+        }
+
+        // 5️⃣ RIGHT TURN → go UP (north)
+        Route::Right => {
+            // go LEFT to turning column
+            tiles.push((INTERSECTION_MAX-4, entry));
+
+            // then go UP into north exit lanes
+            tiles.push((INTERSECTION_MAX-4, exit));
+        }
+    }
+}
+        Direction::Right => {
+    // 1️⃣ spawn left of screen
+    tiles.push((-2, entry));
+
+    // 2️⃣ enter intersection horizontally
+    tiles.push((INTERSECTION_MIN, entry));
+
+    match route {
+        // 3️⃣ straight continues right
+        Route::Straight => {
+            tiles.push((GRID_W + 1, entry));
+        }
+
+        // 4️⃣ LEFT TURN → go UP (north)
+        Route::Left => {
+            // go RIGHT to turning column
+            tiles.push((INTERSECTION_MIN+4, entry));
+
+            // then go UP into north exit lanes
+            tiles.push((INTERSECTION_MIN+4, exit));
+        }
+
+        // 5️⃣ RIGHT TURN → go DOWN (south)
+        Route::Right => {
+            // go RIGHT to turning column
+            tiles.push((INTERSECTION_MIN, entry));
+
+            // then go DOWN into south exit lanes
+            tiles.push((INTERSECTION_MIN, exit));
+        }
+    }
+}
     }
 
     tiles.into_iter().map(|(x, y)| tile_center(x, y)).collect()
