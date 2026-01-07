@@ -1,4 +1,4 @@
-use sdl2::{event::Event, keyboard::Keycode, pixels::Color};
+use sdl2::{event::Event, keyboard::Keycode};
 use std::time::{Duration, Instant};
 use rand::Rng;
 use rand::seq::SliceRandom; 
@@ -7,100 +7,143 @@ use sdl2::image::{InitFlag, LoadTexture};
 use std::path::PathBuf;
 use std::collections::HashMap;
 use sdl2::render::Texture;
+use sdl2::rect::Rect;
+use sdl2::pixels::Color;
+use crate::config::{TILE_SIZE, GRID_W, GRID_H, MID_TILE};
+
+
+// const PAVEMENT_WIDTH: i32 = 40;
+// const WINDOW_SIZE: i32 = 900;
+// const ROAD_COLOR: Color = Color::RGB(60, 60, 60);
+
 
 mod intersection;
 mod vehicle;
 mod stats;
-
+mod config;
+pub const ROAD_HALF_TILES: i32 = 3;
 use stats::{Stats, show_stats_window};
 use intersection::*;
 use vehicle::{Vehicle, Direction, Route };
-
+#[derive(Clone, Copy, PartialEq)]
+enum Tile {
+    Grass,
+    Pavement,
+    VerticalRoad,
+    HorizontalRoad,
+    Intersection,
+}
 type CarTextures<'a> = HashMap<(usize, Direction), Texture<'a>>;
 
 /// Prevent stacking on spawn
 
 
-/// Unified spawner
-/// Unified spawner
+fn build_map() -> [[Tile; GRID_W as usize]; GRID_H as usize] {
+    let mut map = [[Tile::Grass; GRID_W as usize]; GRID_H as usize];
+
+    let mid = GRID_W / 2;
+    let road_half: i32 = 3; // 3 tiles per direction (6 lanes total later)
+
+    for y in 0..GRID_H {
+        for x in 0..GRID_W {
+            // Vertical road
+           // Vertical road
+// Vertical road (3 left lanes + 3 right lanes)
+if (x >= mid - 3 && x <= mid - 1) || (x >= mid + 1 && x <= mid + 3) {
+    map[y as usize][x as usize] = Tile::VerticalRoad;
+}
+
+// Horizontal road (3 top lanes + 3 bottom lanes)
+if (y >= mid - 3 && y <= mid - 1) || (y >= mid + 1 && y <= mid + 3) {
+    map[y as usize][x as usize] = Tile::HorizontalRoad;
+}
+
+            // Intersection
+            if (x >= mid - road_half && x <= mid + road_half)
+                && (y >= mid - road_half && y <= mid + road_half)
+            {
+                map[y as usize][x as usize] = Tile::Intersection;
+            }
+
+            // Pavement ring
+            if map[y as usize][x as usize] == Tile::Grass {
+                if (x >= mid - road_half - 1 && x <= mid + road_half + 1)
+                    || (y >= mid - road_half - 1 && y <= mid + road_half + 1)
+                {
+                    map[y as usize][x as usize] = Tile::Pavement;
+                }
+            }
+        }
+    }
+
+    map
+}
+
 /// Unified spawner - only spawns in entry lanes
 // src/main.rs
+fn entry_lane_tile(dir: Direction, route: Route) -> i32 {
+    match dir {
+        Direction::Up => match route {
+            Route::Left => MID_TILE + 1,
+            Route::Straight => MID_TILE + 2,
+            Route::Right => MID_TILE + 3,
+        },
+
+        Direction::Down => match route {
+            Route::Left => MID_TILE - 3,
+            Route::Straight => MID_TILE - 2,
+            Route::Right => MID_TILE - 1,
+        },
+
+        Direction::Left => match route {
+            
+            Route::Left => MID_TILE - 3,
+            Route::Straight => MID_TILE - 2,
+            Route::Right => MID_TILE - 1,
+        },
+
+        Direction::Right => match route {
+           Route::Left => MID_TILE + 1,
+            Route::Straight => MID_TILE + 2,
+            Route::Right => MID_TILE + 3,
+        },
+    }
+}
 fn spawn_vehicle(vehicles: &mut Vec<Vehicle>, stats: &mut Stats, r: Route, dir: Direction) {
-    let center = CENTER as f32;
-    let half_road = ROAD_WIDTH as f32 / 2.0;
-    let lane_width = LANE_WIDTH as f32;
-    
-    // Calculate lane index (0-2) based on direction and route
-    let lane_index = match (dir, r) {
-        (Direction::Left, Route::Left) => 2,
-        (Direction::Left, Route::Straight) => 1,
-        (Direction::Left, Route::Right) => 0,
-        (Direction::Right, Route::Left) => 2,
-        (Direction::Right, Route::Straight) => 1,
-        (Direction::Right, Route::Right) => 0,
-        (Direction::Up, Route::Left) => 2,
-        (Direction::Up, Route::Straight) => 1,
-        (Direction::Up, Route::Right) => 0,
-        (Direction::Down, Route::Left) => 2,
-        (Direction::Down, Route::Straight) => 1,
-        (Direction::Down, Route::Right) => 0,
-    };
-    
-    // Calculate exact spawn position using lane geometry
-    let (x, y) = match dir {
-        Direction::Right => {
-            // From right side, lane offset is Y coordinate
-            let lane_y = center + half_road - (lane_index as f32 + 0.5) * lane_width;
-            (-100.0, lane_y)
-        },
-        Direction::Left => {
-            // From left side, lane offset is Y coordinate
-            let lane_y = center - half_road + (lane_index as f32 + 0.5) * lane_width;
-            (900.0, lane_y)
-        },
-        Direction::Up => {
-            // From bottom, lane offset is X coordinate
-            let lane_x = center + half_road - (lane_index as f32 + 0.5) * lane_width;
-            (lane_x, 900.0)
-        },
-        Direction::Down => {
-            // From top, lane offset is X coordinate
-            let lane_x = center - half_road + (lane_index as f32 + 0.5) * lane_width;
-            (lane_x, -100.0)
-        },
-    };
+   let lane_tile = entry_lane_tile(dir, r);
 
-    
+    let (x, y): (f32, f32) = match dir {
+    Direction::Up => (
+        (lane_tile * TILE_SIZE + TILE_SIZE / 2) as f32,
+        (GRID_H * TILE_SIZE + 50) as f32,
+    ),
+    Direction::Down => (
+        (lane_tile * TILE_SIZE + TILE_SIZE / 2) as f32,
+        -50.0,
+    ),
+    Direction::Left => (
+        (GRID_W * TILE_SIZE + 50) as f32,
+        (lane_tile * TILE_SIZE + TILE_SIZE / 2) as f32,
+    ),
+    Direction::Right => (
+        -50.0,
+        (lane_tile * TILE_SIZE + TILE_SIZE / 2) as f32,
+    ),
+};
 
-    println!("🚗 {:?} from {:?} at ({:.0},{:.0})", r, dir, x, y);
-    
-    // Create vehicle with exact position
-let car_id = rand::rng().random_range(1..=4);
-let mut vehicle = Vehicle::new(dir, r, car_id);    
-    // Ensure vehicle starts at calculated position
+    let car_id = rand::rng().random_range(1..=4);
+    let mut vehicle = Vehicle::new(dir, r, car_id);
+
     if !vehicle.path.is_empty() {
         vehicle.path[0] = (x, y);
         vehicle.x = x;
         vehicle.y = y;
     }
-    
+
     vehicles.push(vehicle);
 
-    // 📊 Stats update
     stats.total_vehicles += 1;
-    match dir {
-        Direction::Up => stats.up += 1,
-        Direction::Down => stats.down += 1,
-        Direction::Left => stats.left += 1,
-        Direction::Right => stats.right += 1,
-    }
-    match r {
-        Route::Left => stats.left_turn += 1,
-        Route::Straight => stats.straight += 1,
-        Route::Right => stats.right_turn += 1,
-    }
 }
-//// =========================================================
 
 fn main() {
     
@@ -121,7 +164,65 @@ fn main() {
   
   let mut canvas = window.into_canvas().present_vsync().build().unwrap();
 let texture_creator = canvas.texture_creator();
-// === ADDED ===
+// let pavement = texture_creator
+//     .load_texture(
+//         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+//             .join("assets")
+//             .join("roads")
+//             .join("pavement.png")
+//     )
+//     .unwrap();
+
+// let vertical_road = texture_creator
+//     .load_texture(
+//         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+//             .join("assets")
+//             .join("roads")
+//             .join("vertical-road.png")
+//     )
+//     .unwrap();
+
+// let horizontal_road = texture_creator
+//     .load_texture(
+//         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+//             .join("assets")
+//             .join("roads")
+//             .join("horizontal-road.png")
+//     )
+//     .unwrap();
+
+// let intersection = texture_creator
+//     .load_texture(
+//         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+//             .join("assets")
+//             .join("roads")
+//             .join("intersection.png")
+//     )
+//     .unwrap();
+
+let grass_tex = texture_creator
+    .load_texture("assets/grass.png")
+    .unwrap();
+
+let pavement_tex = texture_creator
+    .load_texture("assets/roads/pavement.png")
+    .unwrap();
+
+let verti_road_tex = texture_creator
+    .load_texture("assets/roads/vertical-road.png")
+    .unwrap();
+
+let hori_road_tex = texture_creator
+    .load_texture("assets/roads/horizontal-road.png")
+    .unwrap();
+
+let intersection_tex = texture_creator
+    .load_texture("assets/roads/intersection.png")
+    .unwrap();
+
+     let map = build_map();
+
+    // === ADDED ===
 let mut car_textures: CarTextures = HashMap::new();
 
 for car_id in 1..=4 {
@@ -143,9 +244,8 @@ for car_id in 1..=4 {
         );
 
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("assests")
-            .join(&filename);
-
+            .join("assets")
+    .join(&filename);
         let texture = texture_creator
             .load_texture(&path)
             .expect("Failed to load car texture");
@@ -218,16 +318,49 @@ for car_id in 1..=4 {
             v.update(dt);
         }
 
-        // RENDER -----------------------------
-        canvas.set_draw_color(Color::RGB(20,20,20));
-        canvas.clear();
-        draw(&mut canvas);
+       
 
-        for v in &vehicles {
-v.draw(&mut canvas, &car_textures);
-        }
 
-        canvas.present();
+// ================= RENDER =================
+// ===== GRID BACKGROUND =====
+for y in 0..GRID_H {
+    for x in 0..GRID_W {
+        let tile = map[y as usize][x as usize];
+
+        let tex = match tile {
+            Tile::Grass => &grass_tex,
+            Tile::Pavement => &pavement_tex,
+            Tile::VerticalRoad => &verti_road_tex,
+            Tile::HorizontalRoad => &hori_road_tex,
+            Tile::Intersection => &intersection_tex,
+        };
+
+        canvas.copy(
+            tex,
+            None,
+            Rect::new(
+                x * TILE_SIZE,
+                y * TILE_SIZE,
+                TILE_SIZE as u32,
+                TILE_SIZE as u32,
+            ),
+        ).unwrap();
+    }
+}
+
+
+
+
+// 4️⃣ Cars (top layer)
+for v in &vehicles {
+    v.draw(&mut canvas, &car_textures);
+}
+
+canvas.present();
+
+
+
+
         std::thread::sleep(Duration::from_millis(16));
     }
 
