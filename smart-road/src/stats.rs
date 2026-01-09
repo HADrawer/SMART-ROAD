@@ -11,6 +11,11 @@ pub struct Stats {
     pub straight: u32,
     pub right_turn: u32,
     pub runtime: f32,
+    
+    // 📊 Physics tracking
+    pub total_distance: f32,
+    pub avg_intersection_time: f32,
+    pub collision_avoided: u32,
 }
 
 impl Stats {
@@ -25,6 +30,9 @@ impl Stats {
             straight: 0,
             right_turn: 0,
             runtime: 0.0,
+            total_distance: 0.0,
+            avg_intersection_time: 0.0,
+            collision_avoided: 0,
         }
     }
 }
@@ -47,5 +55,17 @@ pub fn show_stats_window(stats: &Stats) {
     println!("⬅️ Left Turns  : {}", stats.left_turn);
 
     println!("\n🚗 Total Vehicles: {}", stats.total_vehicles);
+    
+    println!("\n⚡ Physics Data:");
+    println!("📏 Total Distance Traveled: {:.2} m", stats.total_distance / 10.0); // assuming 10px = 1m
+    if stats.total_vehicles > 0 {
+        println!("📊 Avg Distance per Vehicle: {:.2} m", 
+            (stats.total_distance / stats.total_vehicles as f32) / 10.0);
+    }
+    if stats.avg_intersection_time > 0.0 {
+        println!("⏱️  Avg Intersection Time: {:.2} s", stats.avg_intersection_time);
+    }
+    println!("🛡️  Collisions Avoided: {}", stats.collision_avoided);
+    
     println!("=====================================\n");
 }
