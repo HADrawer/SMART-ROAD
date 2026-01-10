@@ -345,7 +345,7 @@ fn main() {
         }
 
         // AUTO SPAWN -------------------------
-        if auto_spawn && last_spawn.elapsed().as_secs_f32() > 1.2 {
+        if auto_spawn && last_spawn.elapsed().as_secs_f32() > 0.8 {
             let r = *routes.choose(&mut rng).unwrap();
             let d = *[
                 Direction::Up,
@@ -422,7 +422,4 @@ fn draw_status_overlay(canvas: &mut Canvas<sdl2::video::Window>, vehicles: &[Veh
     canvas.set_draw_color(Color::RGBA(0, 0, 0, 180));
     canvas.fill_rect(Rect::new(0, 0, 900, 80)).unwrap();
     
-    // Note: For actual text rendering, you would need to integrate SDL2_ttf
-    // This is a placeholder to show where status info would go
-    // You can use SDL2_ttf or render text as textures in a real implementation
 }

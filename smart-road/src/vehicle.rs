@@ -8,7 +8,7 @@ const INTERSECTION_MIN: i32 = MID_TILE - ROAD_HALF_TILES;
 const INTERSECTION_MAX: i32 = MID_TILE + ROAD_HALF_TILES;
 
 // 🚦 Safety distance in pixels
-const SAFETY_DISTANCE: f32 = 80.0;
+const SAFETY_DISTANCE: f32 = 120.0;
 
 // 🎯 Velocity levels for traffic control
 #[derive(Clone, Copy, Debug, PartialEq)]
