@@ -8,7 +8,9 @@ const INTERSECTION_MIN: i32 = MID_TILE - ROAD_HALF_TILES;
 const INTERSECTION_MAX: i32 = MID_TILE + ROAD_HALF_TILES;
 
 // 🚦 Safety distance in pixels
-const SAFETY_DISTANCE: f32 = 120.0;
+const SAFETY_DISTANCE: f32 = 120.0; // Reduced to prevent unnecessary stopping
+const EMERGENCY_BRAKE_DISTANCE: f32 = 50.0; // Distance for emergency stop
+const MIN_CRAWL_SPEED: f32 = 20.0; // Minimum speed to keep vehicles moving
 
 // 🎯 Velocity levels for traffic control
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -42,6 +44,7 @@ pub enum Route {
     Straight,
     Left,
 }
+
 #[derive(Clone)]
 pub struct Vehicle {
     pub x: f32,
@@ -52,6 +55,7 @@ pub struct Vehicle {
     pub path: Vec<(f32, f32)>,
     pub current_target: usize,
     pub car_id: usize,
+    pub id: usize, // Unique vehicle ID for comparison
     
     // 📊 Physics tracking
     pub distance_traveled: f32,
@@ -123,6 +127,16 @@ fn exit_lane_tile(dir: Direction, route: Route) -> i32 {
     }
 }
 
+// Global vehicle ID counter
+static mut VEHICLE_ID_COUNTER: usize = 0;
+
+fn get_next_vehicle_id() -> usize {
+    unsafe {
+        VEHICLE_ID_COUNTER += 1;
+        VEHICLE_ID_COUNTER
+    }
+}
+
 // =======================================================
 // 🚗 VEHICLE IMPLEMENTATION
 // =======================================================
@@ -145,6 +159,7 @@ impl Vehicle {
             path,
             current_target: 1,
             car_id,
+            id: get_next_vehicle_id(), // Unique ID for each vehicle
             distance_traveled: 0.0,
             time_in_system: 0.0,
             entered_intersection: false,
@@ -172,9 +187,16 @@ impl Vehicle {
     /// Check if another vehicle is ahead on the path
     pub fn is_vehicle_ahead(&self, other: &Vehicle) -> bool {
         // Check if vehicles are on similar paths (within same lane corridor)
-        let lateral_threshold = 60.0; // pixels
+        let lateral_threshold = 50.0; // Tightened to reduce false positives
         
         let dir = self.facing_direction();
+        let distance = self.distance_to(other);
+        
+        // Only consider vehicles within reasonable range
+        if distance > SAFETY_DISTANCE * 1.5 {
+            return false;
+        }
+        
         match dir {
             Direction::Up => {
                 // Other vehicle is ahead if it's above (smaller y) and in same lane
@@ -203,7 +225,7 @@ impl Vehicle {
 
     /// Update speed smoothly (acceleration/deceleration)
     fn update_speed(&mut self, dt: f32) {
-        let acceleration = 100.0; // pixels/s²
+        let acceleration = 200.0; // pixels/s² - DOUBLED for faster recovery
         let speed_diff = self.target_speed - self.speed;
         
         if speed_diff.abs() < acceleration * dt {
@@ -227,31 +249,39 @@ impl Vehicle {
         // 📊 Track time in system
         self.time_in_system += dt;
 
-        // 🚦 Check for vehicles ahead and adjust speed
+        // 🚦 Enhanced collision avoidance - check ALL nearby vehicles
         let mut should_slow_down = false;
+        let mut closest_distance = f32::MAX;
+        
         for other in other_vehicles {
-            if std::ptr::eq(self, other) {
-                continue; // Skip self
+            // Use unique ID to skip self (works with cloned snapshots)
+            if self.id == other.id {
+                continue;
             }
             
-            if self.is_vehicle_ahead(other) {
-                let distance = self.distance_to(other);
-                if distance < SAFETY_DISTANCE {
-                    should_slow_down = true;
-                    // Emergency brake if too close
-                    if distance < SAFETY_DISTANCE * 0.5 {
-                        self.target_speed = 0.0;
-                    } else {
-                        // Slow down proportionally
-                        self.target_speed = VelocityLevel::Slow.to_speed();
-                    }
-                    break;
-                }
+            let distance = self.distance_to(other);
+            
+            // ONLY consider vehicles that are actually ahead in our lane
+            if self.is_vehicle_ahead(other) && distance < SAFETY_DISTANCE {
+                should_slow_down = true;
+                closest_distance = closest_distance.min(distance);
             }
         }
 
-        // Resume normal speed if no obstacles
-        if !should_slow_down {
+        if should_slow_down {
+            // Emergency brake if too close
+            if closest_distance < EMERGENCY_BRAKE_DISTANCE {
+                self.target_speed = MIN_CRAWL_SPEED; // Keep moving slowly instead of full stop
+            } else if closest_distance < SAFETY_DISTANCE * 0.5 {
+                // Heavy braking but maintain minimum movement
+                self.target_speed = VelocityLevel::Slow.to_speed() * 0.6;
+            } else {
+                // Gradual slowdown proportional to distance
+                let slow_factor = (closest_distance / SAFETY_DISTANCE).max(0.5);
+                self.target_speed = self.velocity_level.to_speed() * slow_factor;
+            }
+        } else {
+            // Resume normal speed if no obstacles
             self.target_speed = self.velocity_level.to_speed();
         }
 
