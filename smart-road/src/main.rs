@@ -142,7 +142,24 @@ fn spawn_vehicle(vehicles: &mut Vec<Vehicle>, stats: &mut Stats, r: Route, dir: 
     }
 
     vehicles.push(vehicle);
+    
+    // Update statistics
     stats.total_vehicles += 1;
+    
+    // Track direction
+    match dir {
+        Direction::Up => stats.up += 1,
+        Direction::Down => stats.down += 1,
+        Direction::Left => stats.left += 1,
+        Direction::Right => stats.right += 1,
+    }
+    
+    // Track route
+    match r {
+        Route::Left => stats.left_turn += 1,
+        Route::Straight => stats.straight += 1,
+        Route::Right => stats.right_turn += 1,
+    }
 }
 
 fn main() {
@@ -220,6 +237,7 @@ fn main() {
     let mut last_frame = Instant::now();
     let mut last_spawn = Instant::now();
     let mut auto_spawn = false;
+    let mut show_stats = false; // Flag to toggle stats display
 
     println!("\n🚗 AUTONOMOUS VEHICLE INTERSECTION SIMULATOR");
     println!("==========================================");
@@ -227,7 +245,8 @@ fn main() {
     println!("  Arrow Keys - Spawn vehicle from direction");
     println!("  R - Toggle auto-spawn");
     println!("  1/2/3 - Set velocity level (Slow/Medium/Fast)");
-    println!("  ESC - Exit and show statistics");
+    println!("  S - Toggle statistics overlay");
+    println!("  ESC - Exit");
     println!("==========================================\n");
 
     'run: loop {
@@ -244,8 +263,21 @@ fn main() {
                     keycode: Some(Keycode::Escape),
                     ..
                 } => {
-                    show_stats_window(&stats);
                     break 'run;
+                }
+
+                Event::KeyDown {
+                    keycode: Some(Keycode::S),
+                    repeat: false,
+                    ..
+                } => {
+                    show_stats = !show_stats;
+                    if show_stats {
+                        stats.update_from_vehicles(&vehicles);
+                        println!("📊 Stats overlay shown - press S again to hide");
+                    } else {
+                        println!("📊 Stats overlay hidden");
+                    }
                 }
 
                 Event::KeyDown {
@@ -408,12 +440,18 @@ fn main() {
         // Draw status info
         draw_status_overlay(&mut canvas, &vehicles, &stats);
 
+        // Draw stats overlay if enabled
+        if show_stats {
+            stats::show_stats_overlay(&mut canvas, &stats);
+        }
+
         canvas.present();
 
         std::thread::sleep(Duration::from_millis(16));
     }
 
     println!("\n📊 Simulation finished.");
+    stats.update_from_vehicles(&vehicles);
     show_stats_window(&stats);
 }
 
