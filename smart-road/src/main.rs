@@ -385,6 +385,8 @@ fn main() {
         for v in &mut vehicles {
             v.update(dt, &vehicles_snapshot);
         }
+        vehicles.retain(|v| !v.has_finished());
+
 
         // Remove out-of-bounds vehicles
         vehicles.retain(|v| !v.is_out_of_bounds());

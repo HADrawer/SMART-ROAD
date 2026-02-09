@@ -176,6 +176,9 @@ impl Vehicle {
         tile_x >= INTERSECTION_MIN && tile_x <= INTERSECTION_MAX &&
         tile_y >= INTERSECTION_MIN && tile_y <= INTERSECTION_MAX
     }
+    pub fn has_finished(&self) -> bool {
+        self.current_target >= self.path.len()
+    }
 
     /// Calculate distance to another vehicle
     pub fn distance_to(&self, other: &Vehicle) -> f32 {
