@@ -84,7 +84,7 @@ fn create_stats_gui(stats: &Stats, events: &mut sdl2::EventPump) -> Result<(), S
     let video = sdl.video()?;
 
     let window = video
-        .window("📊 Simulation Statistics", 600, 700)
+        .window("📊 Simulation Statistics", 700, 650)
         .position_centered()
         .build()
         .map_err(|e| e.to_string())?;
@@ -105,19 +105,11 @@ fn create_stats_gui(stats: &Stats, events: &mut sdl2::EventPump) -> Result<(), S
         }
 
         // Draw background
-        canvas.set_draw_color(Color::RGB(30, 30, 40));
+        canvas.set_draw_color(Color::RGB(20, 20, 30));
         canvas.clear();
 
-        // Draw title background
-        canvas.set_draw_color(Color::RGB(50, 100, 150));
-        canvas.fill_rect(Rect::new(0, 0, 600, 60)).ok();
-
-        // Draw sections
-        draw_stats_content(&mut canvas, stats);
-
-        // Draw footer
-        canvas.set_draw_color(Color::RGB(40, 40, 50));
-        canvas.fill_rect(Rect::new(0, 660, 600, 40)).ok();
+        // Draw stats display
+        draw_text_stats(&mut canvas, stats);
 
         canvas.present();
         std::thread::sleep(std::time::Duration::from_millis(16));
@@ -126,151 +118,221 @@ fn create_stats_gui(stats: &Stats, events: &mut sdl2::EventPump) -> Result<(), S
     Ok(())
 }
 
-fn draw_stats_content(canvas: &mut Canvas<Window>, stats: &Stats) {
-    let line_height = 35;
-    let mut y = 80;
+fn draw_text_stats(canvas: &mut Canvas<Window>, stats: &Stats) {
+    let mut y = 20;
+    let line_height = 30;
 
-    // Runtime section
+    // Title
     canvas.set_draw_color(Color::RGB(70, 130, 180));
-    canvas.fill_rect(Rect::new(20, y, 560, line_height as u32)).ok();
+    canvas.fill_rect(Rect::new(0, 0, 700, 50)).ok();
+    y = 70;
+
+    // All stats as simple lines
+    draw_simple_line(canvas, 50, y, "SIMULATION STATISTICS", "", Color::RGB(255, 255, 255));
+    y += 40;
+
+    // Runtime
+    let runtime_str = format!("{:.2}", stats.runtime);
+    draw_simple_line(canvas, 50, y, "Runtime:", &runtime_str, Color::RGB(255, 255, 100));
+    draw_simple_line(canvas, 400, y, "seconds", "", Color::RGB(200, 200, 200));
     y += line_height + 10;
 
-    // Directions section
-    canvas.set_draw_color(Color::RGB(60, 60, 80));
-    canvas.fill_rect(Rect::new(20, y, 560, 30)).ok();
-    y += 40;
+    // Directions
+    draw_simple_line(canvas, 50, y, "DIRECTIONS", "", Color::RGB(150, 200, 255));
+    y += line_height;
 
-    // Direction bars
-    let max_direction = stats.up.max(stats.down).max(stats.left).max(stats.right).max(1);
-    
-    // Up
-    draw_stat_bar(canvas, 40, y, "Up (S→N)", stats.up, max_direction, Color::RGB(100, 200, 100));
+    draw_simple_line(canvas, 70, y, "Up (South->North):", &format!("{}", stats.up), Color::RGB(100, 255, 100));
     y += line_height;
     
-    // Down
-    draw_stat_bar(canvas, 40, y, "Down (N→S)", stats.down, max_direction, Color::RGB(100, 150, 200));
+    draw_simple_line(canvas, 70, y, "Down (North->South):", &format!("{}", stats.down), Color::RGB(100, 200, 255));
     y += line_height;
     
-    // Right
-    draw_stat_bar(canvas, 40, y, "Right (W→E)", stats.right, max_direction, Color::RGB(200, 150, 100));
+    draw_simple_line(canvas, 70, y, "Right (West->East):", &format!("{}", stats.right), Color::RGB(255, 200, 100));
     y += line_height;
     
-    // Left
-    draw_stat_bar(canvas, 40, y, "Left (E→W)", stats.left, max_direction, Color::RGB(200, 100, 150));
-    y += line_height + 15;
+    draw_simple_line(canvas, 70, y, "Left (East->West):", &format!("{}", stats.left), Color::RGB(255, 150, 200));
+    y += line_height + 10;
 
-    // Route Types section
-    canvas.set_draw_color(Color::RGB(60, 60, 80));
-    canvas.fill_rect(Rect::new(20, y, 560, 30)).ok();
-    y += 40;
+    // Routes
+    draw_simple_line(canvas, 50, y, "ROUTE TYPES", "", Color::RGB(150, 200, 255));
+    y += line_height;
 
-    let max_route = stats.left_turn.max(stats.straight).max(stats.right_turn).max(1);
-    
-    // Right turns
-    draw_stat_bar(canvas, 40, y, "Right Turns", stats.right_turn, max_route, Color::RGB(150, 200, 150));
+    draw_simple_line(canvas, 70, y, "Right Turns:", &format!("{}", stats.right_turn), Color::RGB(150, 255, 150));
     y += line_height;
     
-    // Straight
-    draw_stat_bar(canvas, 40, y, "Straight", stats.straight, max_route, Color::RGB(150, 150, 200));
+    draw_simple_line(canvas, 70, y, "Straight:", &format!("{}", stats.straight), Color::RGB(150, 200, 255));
     y += line_height;
     
-    // Left turns
-    draw_stat_bar(canvas, 40, y, "Left Turns", stats.left_turn, max_route, Color::RGB(200, 150, 150));
-    y += line_height + 15;
+    draw_simple_line(canvas, 70, y, "Left Turns:", &format!("{}", stats.left_turn), Color::RGB(255, 200, 150));
+    y += line_height + 10;
 
-    // Physics section
-    canvas.set_draw_color(Color::RGB(60, 60, 80));
-    canvas.fill_rect(Rect::new(20, y, 560, 30)).ok();
-    y += 40;
+    // Physics
+    draw_simple_line(canvas, 50, y, "PHYSICS DATA", "", Color::RGB(150, 200, 255));
+    y += line_height;
 
-    // Total vehicles
-    canvas.set_draw_color(Color::RGB(80, 80, 100));
-    canvas.fill_rect(Rect::new(40, y, 520, 30)).ok();
-    y += 40;
+    draw_simple_line(canvas, 70, y, "Total Vehicles:", &format!("{}", stats.total_vehicles), Color::RGB(180, 180, 255));
+    y += line_height;
 
-    // Distance
-    canvas.set_draw_color(Color::RGB(80, 80, 100));
-    canvas.fill_rect(Rect::new(40, y, 520, 30)).ok();
-    y += 40;
+    let total_dist = format!("{:.2}", stats.total_distance / 10.0);
+    draw_simple_line(canvas, 70, y, "Total Distance:", &total_dist, Color::RGB(255, 200, 100));
+    draw_simple_line(canvas, 400, y, "m", "", Color::RGB(200, 200, 200));
+    y += line_height;
 
-    // Avg distance per vehicle
     if stats.total_vehicles > 0 {
-        canvas.set_draw_color(Color::RGB(80, 80, 100));
-        canvas.fill_rect(Rect::new(40, y, 520, 30)).ok();
-        y += 40;
+        let avg_dist = format!("{:.2}", (stats.total_distance / stats.total_vehicles as f32) / 10.0);
+        draw_simple_line(canvas, 70, y, "Avg Distance/Vehicle:", &avg_dist, Color::RGB(255, 200, 100));
+        draw_simple_line(canvas, 450, y, "m", "", Color::RGB(200, 200, 200));
+        y += line_height;
     }
 
-    // Intersection time
     if stats.avg_intersection_time > 0.0 {
-        canvas.set_draw_color(Color::RGB(80, 80, 100));
-        canvas.fill_rect(Rect::new(40, y, 520, 30)).ok();
-        y += 40;
+        let avg_time = format!("{:.2}", stats.avg_intersection_time);
+        draw_simple_line(canvas, 70, y, "Avg Intersection Time:", &avg_time, Color::RGB(255, 200, 100));
+        draw_simple_line(canvas, 450, y, "s", "", Color::RGB(200, 200, 200));
+        y += line_height;
     }
 
-    // Collisions avoided
-    canvas.set_draw_color(Color::RGB(80, 80, 100));
-    canvas.fill_rect(Rect::new(40, y, 520, 30)).ok();
+    draw_simple_line(canvas, 70, y, "Collisions Avoided:", &format!("{}", stats.collision_avoided), Color::RGB(100, 255, 100));
+    
+    // Footer
+    canvas.set_draw_color(Color::RGB(50, 50, 60));
+    canvas.fill_rect(Rect::new(0, 620, 700, 30)).ok();
+    draw_simple_line(canvas, 150, 628, "Press ESC/Enter/Space to close", "", Color::RGB(150, 150, 150));
 }
 
-fn draw_stat_bar(
-    canvas: &mut Canvas<Window>,
-    x: i32,
-    y: i32,
-    _label: &str,
-    value: u32,
-    max_value: u32,
-    color: Color,
-) {
-    // Background bar
-    canvas.set_draw_color(Color::RGB(50, 50, 60));
-    canvas.fill_rect(Rect::new(x, y, 520, 25)).ok();
-
-    // Value bar
-    let bar_width = if max_value > 0 {
-        ((value as f32 / max_value as f32) * 400.0) as u32
-    } else {
-        0
-    };
+fn draw_simple_line(canvas: &mut Canvas<Window>, x: i32, y: i32, label: &str, value: &str, color: Color) {
+    // Draw label
+    for (i, ch) in label.chars().enumerate() {
+        draw_pixel_char(canvas, x + (i as i32 * 8), y, ch, Color::RGB(200, 200, 200));
+    }
     
-    canvas.set_draw_color(color);
-    canvas.fill_rect(Rect::new(x + 5, y + 3, bar_width.max(1), 19)).ok();
+    // Draw value (if provided)
+    if !value.is_empty() {
+        let value_x = x + 300;
+        for (i, ch) in value.chars().enumerate() {
+            draw_pixel_char(canvas, value_x + (i as i32 * 10), y, ch, color);
+        }
+    }
+}
 
-    // Border
-    canvas.set_draw_color(Color::RGB(100, 100, 120));
-    canvas.draw_rect(Rect::new(x, y, 520, 25)).ok();
+fn draw_pixel_char(canvas: &mut Canvas<Window>, x: i32, y: i32, ch: char, color: Color) {
+    canvas.set_draw_color(color);
+    
+    // 5x7 bitmap font - defining each character
+    let pattern = get_char_pattern(ch);
+    
+    for (row, bits) in pattern.iter().enumerate() {
+        for col in 0..5 {
+            if (bits >> (4 - col)) & 1 == 1 {
+                canvas.fill_rect(Rect::new(
+                    x + col * 1,
+                    y + row as i32 * 2,
+                    1,
+                    2,
+                )).ok();
+            }
+        }
+    }
+}
+
+fn get_char_pattern(ch: char) -> Vec<u8> {
+    match ch {
+        'A' => vec![0b01110, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001],
+        'B' => vec![0b11110, 0b10001, 0b10001, 0b11110, 0b10001, 0b10001, 0b11110],
+        'C' => vec![0b01110, 0b10001, 0b10000, 0b10000, 0b10000, 0b10001, 0b01110],
+        'D' => vec![0b11110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b11110],
+        'E' => vec![0b11111, 0b10000, 0b10000, 0b11110, 0b10000, 0b10000, 0b11111],
+        'F' => vec![0b11111, 0b10000, 0b10000, 0b11110, 0b10000, 0b10000, 0b10000],
+        'G' => vec![0b01110, 0b10001, 0b10000, 0b10111, 0b10001, 0b10001, 0b01110],
+        'H' => vec![0b10001, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001],
+        'I' => vec![0b11111, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b11111],
+        'L' => vec![0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b11111],
+        'M' => vec![0b10001, 0b11011, 0b10101, 0b10101, 0b10001, 0b10001, 0b10001],
+        'N' => vec![0b10001, 0b11001, 0b10101, 0b10011, 0b10001, 0b10001, 0b10001],
+        'O' => vec![0b01110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110],
+        'P' => vec![0b11110, 0b10001, 0b10001, 0b11110, 0b10000, 0b10000, 0b10000],
+        'R' => vec![0b11110, 0b10001, 0b10001, 0b11110, 0b10100, 0b10010, 0b10001],
+        'S' => vec![0b01111, 0b10000, 0b10000, 0b01110, 0b00001, 0b00001, 0b11110],
+        'T' => vec![0b11111, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100],
+        'U' => vec![0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110],
+        'V' => vec![0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01010, 0b00100],
+        'Y' => vec![0b10001, 0b10001, 0b01010, 0b00100, 0b00100, 0b00100, 0b00100],
+        
+        'a' => vec![0b00000, 0b00000, 0b01110, 0b00001, 0b01111, 0b10001, 0b01111],
+        'c' => vec![0b00000, 0b00000, 0b01110, 0b10000, 0b10000, 0b10001, 0b01110],
+        'd' => vec![0b00001, 0b00001, 0b01111, 0b10001, 0b10001, 0b10001, 0b01111],
+        'e' => vec![0b00000, 0b00000, 0b01110, 0b10001, 0b11111, 0b10000, 0b01110],
+        'g' => vec![0b00000, 0b01111, 0b10001, 0b10001, 0b01111, 0b00001, 0b01110],
+        'h' => vec![0b10000, 0b10000, 0b11110, 0b10001, 0b10001, 0b10001, 0b10001],
+        'i' => vec![0b00100, 0b00000, 0b01100, 0b00100, 0b00100, 0b00100, 0b01110],
+        'l' => vec![0b01100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110],
+        'm' => vec![0b00000, 0b00000, 0b11010, 0b10101, 0b10101, 0b10001, 0b10001],
+        'n' => vec![0b00000, 0b00000, 0b11110, 0b10001, 0b10001, 0b10001, 0b10001],
+        'o' => vec![0b00000, 0b00000, 0b01110, 0b10001, 0b10001, 0b10001, 0b01110],
+        'r' => vec![0b00000, 0b00000, 0b10110, 0b11001, 0b10000, 0b10000, 0b10000],
+        's' => vec![0b00000, 0b00000, 0b01111, 0b10000, 0b01110, 0b00001, 0b11110],
+        't' => vec![0b00100, 0b00100, 0b11111, 0b00100, 0b00100, 0b00100, 0b00011],
+        'u' => vec![0b00000, 0b00000, 0b10001, 0b10001, 0b10001, 0b10011, 0b01101],
+        'v' => vec![0b00000, 0b00000, 0b10001, 0b10001, 0b10001, 0b01010, 0b00100],
+        'w' => vec![0b00000, 0b00000, 0b10001, 0b10001, 0b10101, 0b11011, 0b10001],
+        
+        '0' => vec![0b01110, 0b10001, 0b10011, 0b10101, 0b11001, 0b10001, 0b01110],
+        '1' => vec![0b00100, 0b01100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110],
+        '2' => vec![0b01110, 0b10001, 0b00001, 0b00010, 0b00100, 0b01000, 0b11111],
+        '3' => vec![0b11111, 0b00010, 0b00100, 0b00010, 0b00001, 0b10001, 0b01110],
+        '4' => vec![0b00010, 0b00110, 0b01010, 0b10010, 0b11111, 0b00010, 0b00010],
+        '5' => vec![0b11111, 0b10000, 0b11110, 0b00001, 0b00001, 0b10001, 0b01110],
+        '6' => vec![0b00110, 0b01000, 0b10000, 0b11110, 0b10001, 0b10001, 0b01110],
+        '7' => vec![0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b01000, 0b01000],
+        '8' => vec![0b01110, 0b10001, 0b10001, 0b01110, 0b10001, 0b10001, 0b01110],
+        '9' => vec![0b01110, 0b10001, 0b10001, 0b01111, 0b00001, 0b00010, 0b01100],
+        
+        ' ' => vec![0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000],
+        ':' => vec![0b00000, 0b00100, 0b00000, 0b00000, 0b00000, 0b00100, 0b00000],
+        '.' => vec![0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00100, 0b00000],
+        '/' => vec![0b00001, 0b00010, 0b00010, 0b00100, 0b01000, 0b01000, 0b10000],
+        '-' => vec![0b00000, 0b00000, 0b00000, 0b11111, 0b00000, 0b00000, 0b00000],
+        '>' => vec![0b01000, 0b00100, 0b00010, 0b00001, 0b00010, 0b00100, 0b01000],
+        '(' => vec![0b00010, 0b00100, 0b01000, 0b01000, 0b01000, 0b00100, 0b00010],
+        ')' => vec![0b01000, 0b00100, 0b00010, 0b00010, 0b00010, 0b00100, 0b01000],
+        
+        _ => vec![0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000],
+    }
 }
 
 fn print_stats_to_console(stats: &Stats) {
-    println!("\n=====================================");
-    println!("📊  FINAL SIMULATION STATISTICS");
-    println!("=====================================");
-    println!("🕒 Runtime: {:.2} seconds", stats.runtime);
-
-    println!("\n🚗 Directions:");
-    println!("⬆️  Up (South→North)     : {}", stats.up);
-    println!("⬇️  Down (North→South)   : {}", stats.down);
-    println!("➡️  Right (West→East)     : {}", stats.right);
-    println!("⬅️  Left (East→West)      : {}", stats.left);
-
-    println!("\n🛣️  Route Types:");
-    println!("↩️ Right Turns : {}", stats.right_turn);
-    println!("⬆️ Straight    : {}", stats.straight);
-    println!("⬅️ Left Turns  : {}", stats.left_turn);
-
-    println!("\n🚗 Total Vehicles: {}", stats.total_vehicles);
-    
-    println!("\n⚡ Physics Data:");
-    println!("📏 Total Distance Traveled: {:.2} m", stats.total_distance / 10.0);
+    println!("\n╔═══════════════════════════════════════════════════════════╗");
+    println!("║           📊 FINAL SIMULATION STATISTICS 📊              ║");
+    println!("╠═══════════════════════════════════════════════════════════╣");
+    println!("║ 🕒 Runtime: {:<45.2} seconds ║", stats.runtime);
+    println!("╠═══════════════════════════════════════════════════════════╣");
+    println!("║                    🚗 DIRECTIONS                          ║");
+    println!("╠═══════════════════════════════════════════════════════════╣");
+    println!("║ ⬆️  Up (South→North)     : {:<30} ║", stats.up);
+    println!("║ ⬇️  Down (North→South)   : {:<30} ║", stats.down);
+    println!("║ ➡️  Right (West→East)     : {:<30} ║", stats.right);
+    println!("║ ⬅️  Left (East→West)      : {:<30} ║", stats.left);
+    println!("╠═══════════════════════════════════════════════════════════╣");
+    println!("║                   🛣️  ROUTE TYPES                         ║");
+    println!("╠═══════════════════════════════════════════════════════════╣");
+    println!("║ ↩️ Right Turns : {:<40} ║", stats.right_turn);
+    println!("║ ⬆️ Straight    : {:<40} ║", stats.straight);
+    println!("║ ↪️ Left Turns  : {:<40} ║", stats.left_turn);
+    println!("╠═══════════════════════════════════════════════════════════╣");
+    println!("║ 🚗 Total Vehicles: {:<39} ║", stats.total_vehicles);
+    println!("╠═══════════════════════════════════════════════════════════╣");
+    println!("║                    ⚡ PHYSICS DATA                        ║");
+    println!("╠═══════════════════════════════════════════════════════════╣");
+    println!("║ 📏 Total Distance Traveled: {:<26.2} m ║", stats.total_distance / 10.0);
     if stats.total_vehicles > 0 {
-        println!("📊 Avg Distance per Vehicle: {:.2} m", 
+        println!("║ 📊 Avg Distance per Vehicle: {:<24.2} m ║", 
             (stats.total_distance / stats.total_vehicles as f32) / 10.0);
     }
     if stats.avg_intersection_time > 0.0 {
-        println!("⏱️  Avg Intersection Time: {:.2} s", stats.avg_intersection_time);
+        println!("║ ⏱️  Avg Intersection Time: {:<26.2} s ║", stats.avg_intersection_time);
     }
-    println!("🛡️  Collisions Avoided: {}", stats.collision_avoided);
-    
-    println!("=====================================");
-    println!("Press ESC, Enter, or Space to close the stats window");
-    println!("=====================================\n");
+    println!("║ 🛡️  Collisions Avoided: {:<32} ║", stats.collision_avoided);
+    println!("╚═══════════════════════════════════════════════════════════╝");
+    println!("\n✨ Visual statistics window will open momentarily...");
+    println!("   Press ESC, Enter, or Space to close the window\n");
 }
