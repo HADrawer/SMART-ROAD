@@ -2,19 +2,17 @@ use sdl2::{rect::Rect, render::Canvas, video::Window};
 use sdl2::render::Texture;
 use std::collections::HashMap;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
-lazy_static::lazy_static! {
-    static ref INTERSECTION_LOCK: Mutex<Option<usize>> = Mutex::new(None);
-}
-
-// 🔒 Import grid constants from main.rs (crate root)
 use crate::{TILE_SIZE, GRID_W, GRID_H, MID_TILE, ROAD_HALF_TILES};
 const INTERSECTION_MIN: i32 = MID_TILE - ROAD_HALF_TILES;
 const INTERSECTION_MAX: i32 = MID_TILE + ROAD_HALF_TILES;
 
-const SAFETY_DISTANCE: f32 = 120.0; // Reduced to prevent unnecessary stopping
-const EMERGENCY_BRAKE_DISTANCE: f32 = 50.0; // Distance for emergency stop
-const MIN_CRAWL_SPEED: f32 = 20.0; // Minimum speed to keep vehicles moving
+const SAFETY_DISTANCE: f32 = 70.0; 
+const EMERGENCY_BRAKE_DISTANCE: f32 = 35.0; 
+const MIN_CRAWL_SPEED: f32 = 20.0; 
+
+static NEXT_ID: AtomicUsize = AtomicUsize::new(1);
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum VelocityLevel {
@@ -50,26 +48,28 @@ pub enum Route {
 
 #[derive(Clone)]
 pub struct Vehicle {
+    pub id: usize,
     pub x: f32,
     pub y: f32,
     pub speed: f32,
-    pub target_speed: f32, // Desired speed based on velocity level
+    pub target_speed: f32, 
     pub velocity_level: VelocityLevel,
     pub path: Vec<(f32, f32)>,
     pub current_target: usize,
     pub car_id: usize,
-    pub id: usize, // Unique vehicle ID for comparison
+
     pub finished: bool, 
-    // 📊 Physics tracking
+    pub length_multiplier: f32, 
     pub distance_traveled: f32,
     pub time_in_system: f32,
     pub entered_intersection: bool,
     pub intersection_entry_time: f32,
     pub intersection_exit_time: f32,
+    pub width: u32,
+    pub height: u32,
+    
 }
 
-
-/// Convert tile coords → pixel center
 fn tile_center(tx: i32, ty: i32) -> (f32, f32) {
     (
         (tx * TILE_SIZE + TILE_SIZE / 2) as f32,
@@ -137,17 +137,17 @@ fn get_next_vehicle_id() -> usize {
     }
 }
 
-
 impl Vehicle {
     pub fn new(direction: Direction, route: Route, car_id: usize) -> Self {
         let path = build_path(direction, route);
         let (x, y) = path[0];
-        
+        let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
         // Start with medium velocity by default
         let velocity_level = VelocityLevel::Medium;
         let target_speed = velocity_level.to_speed();
 
         Self {
+            id,
             x,
             y,
             speed: target_speed,
@@ -157,16 +157,20 @@ impl Vehicle {
             current_target: 1,
             car_id,
             finished: false,
-            id: get_next_vehicle_id(), // Unique ID for each vehicle
+            length_multiplier: 1.0, 
             distance_traveled: 0.0,
             time_in_system: 0.0,
             entered_intersection: false,
             intersection_entry_time: 0.0,
             intersection_exit_time: 0.0,
+            width: 30,
+            height: 50,
+           
         }
     }
-
-    /// Check if vehicle is in the intersection zone
+     pub fn has_priority_over(&self, other: &Vehicle) -> bool {
+        self.id < other.id
+    }
     pub fn is_in_intersection(&self) -> bool {
         let tile_x = (self.x / TILE_SIZE as f32) as i32;
         let tile_y = (self.y / TILE_SIZE as f32) as i32;
@@ -174,57 +178,39 @@ impl Vehicle {
         tile_x >= INTERSECTION_MIN && tile_x <= INTERSECTION_MAX &&
         tile_y >= INTERSECTION_MIN && tile_y <= INTERSECTION_MAX
     }
-
-    /// Calculate distance to another vehicle
     pub fn distance_to(&self, other: &Vehicle) -> f32 {
         let dx = other.x - self.x;
         let dy = other.y - self.y;
         (dx * dx + dy * dy).sqrt()
     }
-
-    /// Check if another vehicle is ahead on the path
     pub fn is_vehicle_ahead(&self, other: &Vehicle) -> bool {
-        // Check if vehicles are on similar paths (within same lane corridor)
-        let lateral_threshold = 50.0; // Tightened to reduce false positives
-        
+        let lateral_threshold = 50.0; 
         let dir = self.facing_direction();
         let distance = self.distance_to(other);
 
-        
-        // Only consider vehicles within reasonable range
         if distance > SAFETY_DISTANCE * 1.5 {
             return false;
         }
         
         match dir {
-            Direction::Up => {
-                // Other vehicle is ahead if it's above (smaller y) and in same lane
-                other.y < self.y && (other.x - self.x).abs() < lateral_threshold
+            Direction::Up => { other.y < self.y && (other.x - self.x).abs() < lateral_threshold
             }
-            Direction::Down => {
-                // Other vehicle is ahead if it's below (larger y) and in same lane
-                other.y > self.y && (other.x - self.x).abs() < lateral_threshold
+            Direction::Down => {other.y > self.y && (other.x - self.x).abs() < lateral_threshold
             }
-            Direction::Left => {
-                // Other vehicle is ahead if it's to the left (smaller x) and in same lane
-                other.x < self.x && (other.y - self.y).abs() < lateral_threshold
+            Direction::Left => { other.x < self.x && (other.y - self.y).abs() < lateral_threshold
             }
-            Direction::Right => {
-                // Other vehicle is ahead if it's to the right (larger x) and in same lane
-                other.x > self.x && (other.y - self.y).abs() < lateral_threshold
+            Direction::Right => {other.x > self.x && (other.y - self.y).abs() < lateral_threshold
             }
         }
     }
 
-    /// Set velocity level for traffic control
     pub fn set_velocity_level(&mut self, level: VelocityLevel) {
         self.velocity_level = level;
         self.target_speed = level.to_speed();
     }
 
-    /// Update speed smoothly (acceleration/deceleration)
     fn update_speed(&mut self, dt: f32) {
-        let acceleration = 200.0; // pixels/s² - DOUBLED for faster recovery
+        let acceleration = 200.0; 
         let speed_diff = self.target_speed - self.speed;
         
         if speed_diff.abs() < acceleration * dt {
@@ -234,115 +220,101 @@ impl Vehicle {
         } else {
             self.speed -= acceleration * dt;
         }
-        
-        // Ensure speed doesn't go negative
         self.speed = self.speed.max(0.0);
     }
 
-    /// Move vehicle along tile-based path with collision avoidance
-    pub fn update(&mut self, dt: f32, other_vehicles: &[Vehicle]) {
-        if self.current_target >= self.path.len() {
-            return;
-        }
-        if let Some(&last_point) = self.path.last() {
-            if (self.x - last_point.0).abs() < 5.0 && (self.y - last_point.1).abs() < 5.0 {
-                self.finished = true;
-            }
-        }
-
-
-        // 📊 Track time in system
-        self.time_in_system += dt;
-
-        let mut should_slow_down = false;
-        let mut closest_distance = f32::MAX;
-        
-        for other in other_vehicles {
-            // Use unique ID to skip self (works with cloned snapshots)
-            if self.id == other.id {
-                continue;
-            }
-            
-            let future_x = self.x + self.speed * dt;
-            let future_y = self.y + self.speed * dt;
-
-            let dx = other.x - future_x;
-            let dy = other.y - future_y;
-            let distance = (dx * dx + dy * dy).sqrt();
-
-            
-            // ONLY consider vehicles that are actually ahead in our lane
-            if self.is_vehicle_ahead(other) && distance < SAFETY_DISTANCE {
-                should_slow_down = true;
-                closest_distance = closest_distance.min(distance);
-            }
-        }
-
-        if should_slow_down {
-            // Emergency brake if too close
-            if closest_distance < EMERGENCY_BRAKE_DISTANCE {
-                self.target_speed = MIN_CRAWL_SPEED; // Keep moving slowly instead of full stop
-            } else if closest_distance < SAFETY_DISTANCE * 0.5 {
-                // Heavy braking but maintain minimum movement
-                self.target_speed = VelocityLevel::Slow.to_speed() * 0.6;
-            } else {
-                // Gradual slowdown proportional to distance
-                let slow_factor = (closest_distance / SAFETY_DISTANCE).max(0.5);
-                self.target_speed = self.velocity_level.to_speed() * slow_factor;
-            }
-        } else {
-            // Resume normal speed if no obstacles
-            self.target_speed = self.velocity_level.to_speed();
-        }
-        if self.is_approaching_intersection() && self.speed > 100.0 {
-            self.target_speed = VelocityLevel::Slow.to_speed();
-        }
-
-        self.update_speed(dt);
-
-        // 📍 Track intersection entry/exit
-        let mut lock = INTERSECTION_LOCK.lock().unwrap();
-        let is_in_intersection = self.is_in_intersection();
-
-        if !is_in_intersection && self.is_approaching_intersection() {
-            if let Some(owner) = *lock {
-                if owner != self.id {
-                    self.target_speed = 0.0;
-                }
-            } else {
-                *lock = Some(self.id);
-            }
-        }
-
-        if is_in_intersection == false {
-            if let Some(owner) = *lock {
-                if owner == self.id {
-                    *lock = None;
-                }
-            }
-        }
-
-        
-        
-
-        // 🚗 Move along path
-        let (tx, ty) = self.path[self.current_target];
-        let dx = tx - self.x;
-        let dy = ty - self.y;
-        let dist = (dx * dx + dy * dy).sqrt();
-
-        if dist < self.speed * dt {
-            self.current_target += 1;
-            return;
-        }
-
-        let movement = self.speed * dt;
-        self.x += dx / dist * movement;
-        self.y += dy / dist * movement;
-        
-        // 📊 Track distance
-        self.distance_traveled += movement;
+   pub fn update(&mut self, dt: f32, other_vehicles: &[Vehicle]) {
+    if self.current_target >= self.path.len() {
+        return;
     }
+
+    if let Some(&last_point) = self.path.last() {
+        if (self.x - last_point.0).abs() < 5.0 && (self.y - last_point.1).abs() < 5.0 {
+            self.finished = true;
+            return;
+        }
+    }
+
+    self.time_in_system += dt;
+
+    let mut must_stop = false;
+    let mut min_allowed_speed = self.velocity_level.to_speed();
+
+    for other in other_vehicles {
+        if self.id == other.id { continue; }
+
+        let distance = self.distance_to(other);
+
+      
+        if self.is_vehicle_ahead(other) {
+            let slow_factor = (distance / SAFETY_DISTANCE).max(0.2);
+            min_allowed_speed = min_allowed_speed.min(other.speed * slow_factor);
+
+            if distance < EMERGENCY_BRAKE_DISTANCE {
+                must_stop = true;
+            }
+        }
+
+      
+        if self.is_approaching_intersection() && other.is_approaching_intersection() {
+            if !self.is_vehicle_ahead(other) && !other.is_vehicle_ahead(self) {
+                
+                if self.id > other.id && !self.has_priority_over(other) && distance < SAFETY_DISTANCE {
+                    must_stop = true;
+                }
+            }
+        }
+    }
+
+    
+    if must_stop {
+        self.target_speed = 0.0;
+    } else {
+        self.target_speed = min_allowed_speed;
+    }
+
+    self.update_speed(dt);
+
+    let (tx, ty) = self.path[self.current_target];
+    let dx = tx - self.x;
+    let dy = ty - self.y;
+    let dist = (dx * dx + dy * dy).sqrt();
+
+    if dist < self.speed * dt {
+        self.current_target += 1;
+        return;
+    }
+
+    let movement = self.speed * dt;
+    let next_x = self.x + dx / dist * movement;
+    let next_y = self.y + dy / dist * movement;
+
+    let mut can_move = true;
+    for other in other_vehicles {
+        if self.id == other.id { continue; }
+
+        let dx2 = other.x - next_x;
+        let dy2 = other.y - next_y;
+        let next_distance = (dx2 * dx2 + dy2 * dy2).sqrt();
+
+        let min_gap = self.height as f32;
+
+        if self.is_vehicle_ahead(other) && next_distance < min_gap {
+            can_move = false;
+            break;
+        }
+    }
+
+    if can_move {
+        self.x = next_x;
+        self.y = next_y;
+        self.distance_traveled += movement;
+    } else {
+        self.speed = 0.0;
+    }
+
+    self.target_speed = self.target_speed.min(self.velocity_level.to_speed());
+}
     pub fn is_approaching_intersection(&self) -> bool {
         let tile_x = (self.x / TILE_SIZE as f32) as i32;
         let tile_y = (self.y / TILE_SIZE as f32) as i32;
@@ -355,31 +327,32 @@ impl Vehicle {
         tile_y <= INTERSECTION_MAX + buffer
     }
 
-
     pub fn draw(
-        &self,
-        canvas: &mut Canvas<Window>,
-        textures: &HashMap<(usize, Direction), Texture>,
-    ) {
-        let dir = self.facing_direction();
-        let texture = &textures[&(self.car_id, dir)];
+    &self,
+    canvas: &mut Canvas<Window>,
+    textures: &HashMap<(usize, Direction), Texture>,
+) {
+    let dir = self.facing_direction();
+    let texture = &textures[&(self.car_id, dir)];
 
-        use sdl2::render::TextureQuery;
-        let TextureQuery { width, height, .. } = texture.query();
+    use sdl2::render::TextureQuery;
+    let TextureQuery { width, height, .. } = texture.query();
 
-        let scale = 0.5;
-        let w = (width as f32 * scale) as u32;
-        let h = (height as f32 * scale) as u32;
+    let scale = 0.5;
+    let width_scaled = (width as f32 * scale) as u32;
 
-        let dst = Rect::new(
-            (self.x - w as f32 / 2.0) as i32,
-            (self.y - h as f32 / 2.0) as i32,
-            w,
-            h,
-        );
+    let height_scaled = (height as f32 * scale * self.length_multiplier) as u32;
 
-        canvas.copy(texture, None, dst).unwrap();
-    }
+    let dst = Rect::new(
+        (self.x - width_scaled as f32 / 2.0) as i32,
+        (self.y - height_scaled as f32 / 2.0) as i32,
+        width_scaled,
+        height_scaled,
+    );
+
+    canvas.copy(texture, None, dst).unwrap();
+}
+
 
     pub fn facing_direction(&self) -> Direction {
         if self.current_target >= self.path.len() {
@@ -413,7 +386,6 @@ impl Vehicle {
 }
 
 
-    /// Get intersection traversal time
     pub fn get_intersection_time(&self) -> f32 {
         if self.intersection_exit_time > 0.0 {
             self.intersection_exit_time - self.intersection_entry_time
@@ -424,7 +396,6 @@ impl Vehicle {
         }
     }
 
-    /// Get average velocity
     pub fn get_average_velocity(&self) -> f32 {
         if self.time_in_system > 0.0 {
             self.distance_traveled / self.time_in_system
@@ -433,10 +404,6 @@ impl Vehicle {
         }
     }
 }
-
-// =======================================================
-// 🧭 TILE-BASED PATH GENERATION
-// =======================================================
 
 pub fn build_path(dir: Direction, route: Route) -> Vec<(f32, f32)> {
     let entry = entry_lane_tile(dir, route);

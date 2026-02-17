@@ -364,9 +364,39 @@ fn main() {
             v.update(dt, &vehicles_snapshot);
         }
 
+        // const SAFE_DISTANCE: f32 = 50.0;
+
+        // for i in 0..vehicles.len() {
+        //     for j in (i + 1)..vehicles.len() {
+
+        //         let (left, right) = vehicles.split_at_mut(j);
+        //         let v1 = &mut left[i];
+        //         let v2 = &mut right[0];
+
+        //         let dx = v1.x - v2.x;
+        //         let dy = v1.y - v2.y;
+        //         let distance = (dx * dx + dy * dy).sqrt();
+
+        //         if distance < SAFE_DISTANCE {
+
+        //             if v1.id < v2.id {
+        //                 v2.stopped = true;
+        //                 v1.stopped = false;
+        //             } else {
+        //                 v1.stopped = true;
+        //                 v2.stopped = false;
+        //             }
+
+        //         } else {
+        //             v1.stopped = false;
+        //             v2.stopped = false;
+        //         }
+        //     }
+        // }
+
         // Remove out-of-bounds vehicles
         vehicles.retain(|v| !v.finished);
-
+        
         // ================= RENDER =================
         // Grid background
         for y in 0..GRID_H {

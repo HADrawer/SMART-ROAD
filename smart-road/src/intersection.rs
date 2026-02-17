@@ -3,10 +3,9 @@ use sdl2::rect::Rect;
 use sdl2::render::Canvas;
 use sdl2::video::Window;
 
-// ===== ROAD CONFIG =====
 pub const LANE_WIDTH: i32 = 40;
-pub const LANES_PER_SIDE: i32 = 3;           // Entry lanes per direction
-pub const TOTAL_LANES: i32 = LANES_PER_SIDE * 2; // 6 lanes total per road
+pub const LANES_PER_SIDE: i32 = 3;           
+pub const TOTAL_LANES: i32 = LANES_PER_SIDE * 2; 
 pub const ROAD_WIDTH: i32 = LANE_WIDTH * TOTAL_LANES;
 pub const CENTER: i32 = 450;
 pub const HALF_ROAD: i32 = ROAD_WIDTH / 2;
@@ -14,11 +13,8 @@ pub const HALF_ROAD: i32 = ROAD_WIDTH / 2;
 
 
 pub fn draw(canvas: &mut Canvas<Window>) {
-    // === Step 1: Entry + Exit Roads ===
-    canvas.set_draw_color(Color::RGB(45, 45, 45)); // road asphalt
+    canvas.set_draw_color(Color::RGB(45, 45, 45)); 
 
-    // Vertical entry (bottom)
-   // Vertical entry (bottom)
 canvas.fill_rect(Rect::new(
     CENTER - ROAD_WIDTH / 2,
     CENTER,
