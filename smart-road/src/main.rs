@@ -10,6 +10,7 @@ use sdl2::rect::Rect;
 use sdl2::pixels::Color;
 use sdl2::render::Canvas;
 use crate::config::{TILE_SIZE, GRID_W, GRID_H, MID_TILE};
+use vehicle::entry_lane_tile;
 
 mod intersection;
 mod vehicle;
@@ -72,52 +73,29 @@ fn build_map() -> [[Tile; GRID_W as usize]; GRID_H as usize] {
     map
 }
 
-fn entry_lane_tile(dir: Direction, route: Route) -> i32 {
-    match dir {
-        Direction::Up => match route {
-            Route::Left => MID_TILE + 1,
-            Route::Straight => MID_TILE + 2,
-            Route::Right => MID_TILE + 3,
-        },
-        Direction::Down => match route {
-            Route::Left => MID_TILE - 3,
-            Route::Straight => MID_TILE - 2,
-            Route::Right => MID_TILE - 1,
-        },
-        Direction::Left => match route {
-            Route::Left => MID_TILE - 3,
-            Route::Straight => MID_TILE - 2,
-            Route::Right => MID_TILE - 1,
-        },
-        Direction::Right => match route {
-            Route::Left => MID_TILE + 1,
-            Route::Straight => MID_TILE + 2,
-            Route::Right => MID_TILE + 3,
-        },
-    }
-}
 
 fn spawn_vehicle(vehicles: &mut Vec<Vehicle>, stats: &mut Stats, r: Route, dir: Direction) {
     let lane_tile = entry_lane_tile(dir, r);
 
     let (x, y): (f32, f32) = match dir {
-        Direction::Up => (
-            (lane_tile * TILE_SIZE + TILE_SIZE / 2) as f32,
-            (GRID_H * TILE_SIZE + 50) as f32,
-        ),
-        Direction::Down => (
-            (lane_tile * TILE_SIZE + TILE_SIZE / 2) as f32,
-            -50.0,
-        ),
-        Direction::Left => (
-            (GRID_W * TILE_SIZE + 50) as f32,
-            (lane_tile * TILE_SIZE + TILE_SIZE / 2) as f32,
-        ),
-        Direction::Right => (
-            -50.0,
-            (lane_tile * TILE_SIZE + TILE_SIZE / 2) as f32,
-        ),
-    };
+    Direction::Up => (
+        (lane_tile * TILE_SIZE + TILE_SIZE / 2) as f32,
+        (GRID_H as i32 * TILE_SIZE + 50) as f32,
+    ),
+    Direction::Down => (
+        (lane_tile * TILE_SIZE + TILE_SIZE / 2) as f32,
+        -50.0,
+    ),
+    Direction::Left => (
+        (GRID_W as i32 * TILE_SIZE + 50) as f32,
+        (lane_tile * TILE_SIZE + TILE_SIZE / 2) as f32,
+    ),
+    Direction::Right => (
+        -50.0,
+        (lane_tile * TILE_SIZE + TILE_SIZE / 2) as f32,
+    ),
+};
+
 
     // Check if spawn position is too close to existing vehicles
     const MIN_SPAWN_DISTANCE: f32 = 120.0;
@@ -387,7 +365,7 @@ fn main() {
         }
 
         // Remove out-of-bounds vehicles
-        vehicles.retain(|v| !v.is_out_of_bounds());
+        vehicles.retain(|v| !v.finished);
 
         // ================= RENDER =================
         // Grid background

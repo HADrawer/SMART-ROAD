@@ -59,7 +59,7 @@ pub struct Vehicle {
     pub current_target: usize,
     pub car_id: usize,
     pub id: usize, // Unique vehicle ID for comparison
-    
+    pub finished: bool, 
     // 📊 Physics tracking
     pub distance_traveled: f32,
     pub time_in_system: f32,
@@ -77,7 +77,7 @@ fn tile_center(tx: i32, ty: i32) -> (f32, f32) {
     )
 }
 
-fn entry_lane_tile(dir: Direction, route: Route) -> i32 {
+pub fn entry_lane_tile(dir: Direction, route: Route) -> i32 {
     match dir {
         Direction::Down => match route {
             Route::Left => MID_TILE - 3,
@@ -156,6 +156,7 @@ impl Vehicle {
             path,
             current_target: 1,
             car_id,
+            finished: false,
             id: get_next_vehicle_id(), // Unique ID for each vehicle
             distance_traveled: 0.0,
             time_in_system: 0.0,
@@ -243,6 +244,12 @@ impl Vehicle {
         if self.current_target >= self.path.len() {
             return;
         }
+        if let Some(&last_point) = self.path.last() {
+            if (self.x - last_point.0).abs() < 5.0 && (self.y - last_point.1).abs() < 5.0 {
+                self.finished = true;
+            }
+        }
+
 
         // 📊 Track time in system
         self.time_in_system += dt;
@@ -398,10 +405,13 @@ impl Vehicle {
         }
     }
 
-    pub fn is_out_of_bounds(&self) -> bool {
-        self.x < -200.0 || self.x > (GRID_W * TILE_SIZE + 200) as f32
-            || self.y < -200.0 || self.y > (GRID_H * TILE_SIZE + 200) as f32
-    }
+   pub fn is_out_of_bounds(&self) -> bool {
+    self.x < -50.0
+        || self.x > (GRID_W * TILE_SIZE + 50) as f32
+        || self.y < -50.0
+        || self.y > (GRID_H * TILE_SIZE + 50) as f32
+}
+
 
     /// Get intersection traversal time
     pub fn get_intersection_time(&self) -> f32 {
