@@ -1,18 +1,21 @@
 use sdl2::{rect::Rect, render::Canvas, video::Window};
 use sdl2::render::Texture;
 use std::collections::HashMap;
+use std::sync::Mutex;
+
+lazy_static::lazy_static! {
+    static ref INTERSECTION_LOCK: Mutex<Option<usize>> = Mutex::new(None);
+}
 
 // 🔒 Import grid constants from main.rs (crate root)
 use crate::{TILE_SIZE, GRID_W, GRID_H, MID_TILE, ROAD_HALF_TILES};
 const INTERSECTION_MIN: i32 = MID_TILE - ROAD_HALF_TILES;
 const INTERSECTION_MAX: i32 = MID_TILE + ROAD_HALF_TILES;
 
-// 🚦 Safety distance in pixels
 const SAFETY_DISTANCE: f32 = 120.0; // Reduced to prevent unnecessary stopping
 const EMERGENCY_BRAKE_DISTANCE: f32 = 50.0; // Distance for emergency stop
 const MIN_CRAWL_SPEED: f32 = 20.0; // Minimum speed to keep vehicles moving
 
-// 🎯 Velocity levels for traffic control
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum VelocityLevel {
     Slow = 0,
@@ -65,9 +68,6 @@ pub struct Vehicle {
     pub intersection_exit_time: f32,
 }
 
-// =======================================================
-// 🔧 TILE HELPERS
-// =======================================================
 
 /// Convert tile coords → pixel center
 fn tile_center(tx: i32, ty: i32) -> (f32, f32) {
@@ -137,9 +137,6 @@ fn get_next_vehicle_id() -> usize {
     }
 }
 
-// =======================================================
-// 🚗 VEHICLE IMPLEMENTATION
-// =======================================================
 
 impl Vehicle {
     pub fn new(direction: Direction, route: Route, car_id: usize) -> Self {
@@ -191,6 +188,7 @@ impl Vehicle {
         
         let dir = self.facing_direction();
         let distance = self.distance_to(other);
+
         
         // Only consider vehicles within reasonable range
         if distance > SAFETY_DISTANCE * 1.5 {
@@ -249,7 +247,6 @@ impl Vehicle {
         // 📊 Track time in system
         self.time_in_system += dt;
 
-        // 🚦 Enhanced collision avoidance - check ALL nearby vehicles
         let mut should_slow_down = false;
         let mut closest_distance = f32::MAX;
         
@@ -259,7 +256,13 @@ impl Vehicle {
                 continue;
             }
             
-            let distance = self.distance_to(other);
+            let future_x = self.x + self.speed * dt;
+            let future_y = self.y + self.speed * dt;
+
+            let dx = other.x - future_x;
+            let dy = other.y - future_y;
+            let distance = (dx * dx + dy * dy).sqrt();
+
             
             // ONLY consider vehicles that are actually ahead in our lane
             if self.is_vehicle_ahead(other) && distance < SAFETY_DISTANCE {
@@ -284,20 +287,36 @@ impl Vehicle {
             // Resume normal speed if no obstacles
             self.target_speed = self.velocity_level.to_speed();
         }
+        if self.is_approaching_intersection() && self.speed > 100.0 {
+            self.target_speed = VelocityLevel::Slow.to_speed();
+        }
 
-        // 🎯 Update speed smoothly
         self.update_speed(dt);
 
         // 📍 Track intersection entry/exit
-        let was_in_intersection = self.entered_intersection;
+        let mut lock = INTERSECTION_LOCK.lock().unwrap();
         let is_in_intersection = self.is_in_intersection();
-        
-        if !was_in_intersection && is_in_intersection {
-            self.entered_intersection = true;
-            self.intersection_entry_time = self.time_in_system;
-        } else if was_in_intersection && !is_in_intersection && self.intersection_exit_time == 0.0 {
-            self.intersection_exit_time = self.time_in_system;
+
+        if !is_in_intersection && self.is_approaching_intersection() {
+            if let Some(owner) = *lock {
+                if owner != self.id {
+                    self.target_speed = 0.0;
+                }
+            } else {
+                *lock = Some(self.id);
+            }
         }
+
+        if is_in_intersection == false {
+            if let Some(owner) = *lock {
+                if owner == self.id {
+                    *lock = None;
+                }
+            }
+        }
+
+        
+        
 
         // 🚗 Move along path
         let (tx, ty) = self.path[self.current_target];
@@ -317,6 +336,18 @@ impl Vehicle {
         // 📊 Track distance
         self.distance_traveled += movement;
     }
+    pub fn is_approaching_intersection(&self) -> bool {
+        let tile_x = (self.x / TILE_SIZE as f32) as i32;
+        let tile_y = (self.y / TILE_SIZE as f32) as i32;
+
+        let buffer = 2;
+
+        tile_x >= INTERSECTION_MIN - buffer &&
+        tile_x <= INTERSECTION_MAX + buffer &&
+        tile_y >= INTERSECTION_MIN - buffer &&
+        tile_y <= INTERSECTION_MAX + buffer
+    }
+
 
     pub fn draw(
         &self,
