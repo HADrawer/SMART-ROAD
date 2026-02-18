@@ -1,16 +1,20 @@
 use sdl2::{rect::Rect, render::Canvas, video::Window};
 use sdl2::render::Texture;
 use std::collections::HashMap;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::{TILE_SIZE, GRID_W, GRID_H, MID_TILE, ROAD_HALF_TILES};
+
 const INTERSECTION_MIN: i32 = MID_TILE - ROAD_HALF_TILES;
 const INTERSECTION_MAX: i32 = MID_TILE + ROAD_HALF_TILES;
 
-const SAFETY_DISTANCE: f32 = 70.0; 
-const EMERGENCY_BRAKE_DISTANCE: f32 = 35.0; 
-const MIN_CRAWL_SPEED: f32 = 20.0; 
+// tuned for faster flow
+const SAFETY_DISTANCE: f32 = 55.0;
+const EMERGENCY_BRAKE_DISTANCE: f32 = 28.0;
+
+// stopline settings (pixels)
+const STOPLINE_DISTANCE: f32 = 150.0; // distance from center before intersection
+const INTERSECTION_RADIUS: f32 = 120.0;
 
 static NEXT_ID: AtomicUsize = AtomicUsize::new(1);
 
@@ -24,9 +28,9 @@ pub enum VelocityLevel {
 impl VelocityLevel {
     pub fn to_speed(&self) -> f32 {
         match self {
-            VelocityLevel::Slow => 60.0,
-            VelocityLevel::Medium => 120.0,
-            VelocityLevel::Fast => 180.0,
+            VelocityLevel::Slow => 120.0,
+            VelocityLevel::Medium => 220.0,
+            VelocityLevel::Fast => 320.0,
         }
     }
 }
@@ -52,14 +56,14 @@ pub struct Vehicle {
     pub x: f32,
     pub y: f32,
     pub speed: f32,
-    pub target_speed: f32, 
+    pub target_speed: f32,
     pub velocity_level: VelocityLevel,
     pub path: Vec<(f32, f32)>,
     pub current_target: usize,
     pub car_id: usize,
 
-    pub finished: bool, 
-    pub length_multiplier: f32, 
+    pub finished: bool,
+    pub length_multiplier: f32,
     pub distance_traveled: f32,
     pub time_in_system: f32,
     pub entered_intersection: bool,
@@ -67,7 +71,6 @@ pub struct Vehicle {
     pub intersection_exit_time: f32,
     pub width: u32,
     pub height: u32,
-    
 }
 
 fn tile_center(tx: i32, ty: i32) -> (f32, f32) {
@@ -75,6 +78,12 @@ fn tile_center(tx: i32, ty: i32) -> (f32, f32) {
         (tx * TILE_SIZE + TILE_SIZE / 2) as f32,
         (ty * TILE_SIZE + TILE_SIZE / 2) as f32,
     )
+}
+
+fn intersection_center() -> (f32, f32) {
+    let cx = (MID_TILE * TILE_SIZE + TILE_SIZE / 2) as f32;
+    let cy = (MID_TILE * TILE_SIZE + TILE_SIZE / 2) as f32;
+    (cx, cy)
 }
 
 pub fn entry_lane_tile(dir: Direction, route: Route) -> i32 {
@@ -127,22 +136,13 @@ fn exit_lane_tile(dir: Direction, route: Route) -> i32 {
     }
 }
 
-// Global vehicle ID counter
-static mut VEHICLE_ID_COUNTER: usize = 0;
-
-fn get_next_vehicle_id() -> usize {
-    unsafe {
-        VEHICLE_ID_COUNTER += 1;
-        VEHICLE_ID_COUNTER
-    }
-}
-
 impl Vehicle {
     pub fn new(direction: Direction, route: Route, car_id: usize) -> Self {
         let path = build_path(direction, route);
         let (x, y) = path[0];
+
         let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-        // Start with medium velocity by default
+
         let velocity_level = VelocityLevel::Medium;
         let target_speed = velocity_level.to_speed();
 
@@ -156,8 +156,9 @@ impl Vehicle {
             path,
             current_target: 1,
             car_id,
+
             finished: false,
-            length_multiplier: 1.0, 
+            length_multiplier: 1.0,
             distance_traveled: 0.0,
             time_in_system: 0.0,
             entered_intersection: false,
@@ -165,42 +166,34 @@ impl Vehicle {
             intersection_exit_time: 0.0,
             width: 30,
             height: 50,
-           
         }
     }
-     pub fn has_priority_over(&self, other: &Vehicle) -> bool {
+
+    pub fn has_priority_over(&self, other: &Vehicle) -> bool {
         self.id < other.id
     }
-    pub fn is_in_intersection(&self) -> bool {
-        let tile_x = (self.x / TILE_SIZE as f32) as i32;
-        let tile_y = (self.y / TILE_SIZE as f32) as i32;
-        
-        tile_x >= INTERSECTION_MIN && tile_x <= INTERSECTION_MAX &&
-        tile_y >= INTERSECTION_MIN && tile_y <= INTERSECTION_MAX
-    }
+
     pub fn distance_to(&self, other: &Vehicle) -> f32 {
         let dx = other.x - self.x;
         let dy = other.y - self.y;
         (dx * dx + dy * dy).sqrt()
     }
+
     pub fn is_vehicle_ahead(&self, other: &Vehicle) -> bool {
-        let lateral_threshold = 50.0; 
+        let lateral_threshold = 18.0;
+
         let dir = self.facing_direction();
         let distance = self.distance_to(other);
 
-        if distance > SAFETY_DISTANCE * 1.5 {
+        if distance > SAFETY_DISTANCE * 2.0 {
             return false;
         }
-        
+
         match dir {
-            Direction::Up => { other.y < self.y && (other.x - self.x).abs() < lateral_threshold
-            }
-            Direction::Down => {other.y > self.y && (other.x - self.x).abs() < lateral_threshold
-            }
-            Direction::Left => { other.x < self.x && (other.y - self.y).abs() < lateral_threshold
-            }
-            Direction::Right => {other.x > self.x && (other.y - self.y).abs() < lateral_threshold
-            }
+            Direction::Up => other.y < self.y && (other.x - self.x).abs() < lateral_threshold,
+            Direction::Down => other.y > self.y && (other.x - self.x).abs() < lateral_threshold,
+            Direction::Left => other.x < self.x && (other.y - self.y).abs() < lateral_threshold,
+            Direction::Right => other.x > self.x && (other.y - self.y).abs() < lateral_threshold,
         }
     }
 
@@ -210,9 +203,10 @@ impl Vehicle {
     }
 
     fn update_speed(&mut self, dt: f32) {
-        let acceleration = 200.0; 
+        let acceleration = 520.0;
+
         let speed_diff = self.target_speed - self.speed;
-        
+
         if speed_diff.abs() < acceleration * dt {
             self.speed = self.target_speed;
         } else if speed_diff > 0.0 {
@@ -220,139 +214,259 @@ impl Vehicle {
         } else {
             self.speed -= acceleration * dt;
         }
+
         self.speed = self.speed.max(0.0);
     }
 
-   pub fn update(&mut self, dt: f32, other_vehicles: &[Vehicle]) {
-    if self.current_target >= self.path.len() {
-        return;
+    // tighter intersection detection
+    pub fn is_in_intersection(&self) -> bool {
+        let (cx, cy) = intersection_center();
+
+        (self.x > cx - INTERSECTION_RADIUS)
+            && (self.x < cx + INTERSECTION_RADIUS)
+            && (self.y > cy - INTERSECTION_RADIUS)
+            && (self.y < cy + INTERSECTION_RADIUS)
     }
 
-    if let Some(&last_point) = self.path.last() {
-        if (self.x - last_point.0).abs() < 5.0 && (self.y - last_point.1).abs() < 5.0 {
-            self.finished = true;
-            return;
+    // stopline BEFORE intersection based on distance from center
+    pub fn is_before_stopline(&self) -> bool {
+        let (cx, cy) = intersection_center();
+
+        // if car is already too close to center, it is past stopline
+        let dx = (self.x - cx).abs();
+        let dy = (self.y - cy).abs();
+
+        dx > STOPLINE_DISTANCE || dy > STOPLINE_DISTANCE
+    }
+
+    // true when vehicle is close enough to intersection that it should consider stopping
+    pub fn is_near_stopline_zone(&self) -> bool {
+        let (cx, cy) = intersection_center();
+        let dx = (self.x - cx).abs();
+        let dy = (self.y - cy).abs();
+
+        dx < STOPLINE_DISTANCE + 40.0 && dy < STOPLINE_DISTANCE + 40.0
+    }
+
+    // detect if vehicle path is a "right turn" by checking the last target direction change
+    pub fn is_right_turn_path(&self) -> bool {
+        if self.path.len() < 3 {
+            return false;
+        }
+
+        let start = self.path[0];
+        let mid = self.path[1];
+        let end = *self.path.last().unwrap();
+
+        let dx1 = mid.0 - start.0;
+        let dy1 = mid.1 - start.1;
+
+        let dx2 = end.0 - mid.0;
+        let dy2 = end.1 - mid.1;
+
+        // if movement changes axis -> it is a turn
+        let first_vertical = dy1.abs() > dx1.abs();
+        let second_vertical = dy2.abs() > dx2.abs();
+
+        // turn = axis changed
+        if first_vertical == second_vertical {
+            return false;
+        }
+
+        // determine if it's right turn (not left)
+        // We use sign of turn by checking direction vectors
+        let v1 = (dx1.signum(), dy1.signum());
+        let v2 = (dx2.signum(), dy2.signum());
+
+        match (v1, v2) {
+            ((0.0, -1.0), (1.0, 0.0)) => true,  // Up -> Right
+            ((0.0, -1.0), (-1.0, 0.0)) => false, // Up -> Left
+
+            ((0.0, 1.0), (-1.0, 0.0)) => true,  // Down -> Left
+            ((0.0, 1.0), (1.0, 0.0)) => false,  // Down -> Right
+
+            ((-1.0, 0.0), (0.0, -1.0)) => true, // Left -> Up
+            ((-1.0, 0.0), (0.0, 1.0)) => false, // Left -> Down
+
+            ((1.0, 0.0), (0.0, 1.0)) => true,   // Right -> Down
+            ((1.0, 0.0), (0.0, -1.0)) => false, // Right -> Up
+
+            _ => false,
         }
     }
 
-    self.time_in_system += dt;
+    // RETURNS true if emergency braking happened (collision avoided)
+    pub fn update(&mut self, dt: f32, other_vehicles: &[Vehicle]) -> bool {
+        let mut avoided_collision = false;
 
-    let mut must_stop = false;
-    let mut min_allowed_speed = self.velocity_level.to_speed();
+        if self.current_target >= self.path.len() {
+            return false;
+        }
 
-    for other in other_vehicles {
-        if self.id == other.id { continue; }
-
-        let distance = self.distance_to(other);
-
-      
-        if self.is_vehicle_ahead(other) {
-            let slow_factor = (distance / SAFETY_DISTANCE).max(0.2);
-            min_allowed_speed = min_allowed_speed.min(other.speed * slow_factor);
-
-            if distance < EMERGENCY_BRAKE_DISTANCE {
-                must_stop = true;
+        if let Some(&last_point) = self.path.last() {
+            if (self.x - last_point.0).abs() < 5.0 && (self.y - last_point.1).abs() < 5.0 {
+                self.finished = true;
+                return false;
             }
         }
 
-      
-        if self.is_approaching_intersection() && other.is_approaching_intersection() {
-            if !self.is_vehicle_ahead(other) && !other.is_vehicle_ahead(self) {
-                
-                if self.id > other.id && !self.has_priority_over(other) && distance < SAFETY_DISTANCE {
-                    must_stop = true;
+        self.time_in_system += dt;
+
+        let mut must_stop = false;
+        let mut min_allowed_speed = self.velocity_level.to_speed();
+
+        // ================== 1) FOLLOWING DISTANCE SAFETY ==================
+        for other in other_vehicles {
+            if self.id == other.id {
+                continue;
+            }
+
+            let distance = self.distance_to(other);
+
+            if self.is_vehicle_ahead(other) {
+                if distance < SAFETY_DISTANCE {
+                    let ratio = (distance / SAFETY_DISTANCE).clamp(0.0, 1.0);
+
+                    min_allowed_speed =
+                        min_allowed_speed.min(self.velocity_level.to_speed() * ratio);
+
+                    if distance < EMERGENCY_BRAKE_DISTANCE {
+                        must_stop = true;
+                        avoided_collision = true;
+                    }
                 }
             }
         }
-    }
 
-    
-    if must_stop {
-        self.target_speed = 0.0;
-    } else {
-        self.target_speed = min_allowed_speed;
-    }
+        // ================== 2) INTERSECTION PRIORITY RULE ==================
+        // Only check priority when car is near stopline zone
+        if self.is_near_stopline_zone() && !self.is_right_turn_path() {
+            let mut someone_inside = false;
 
-    self.update_speed(dt);
+            for other in other_vehicles {
+                if other.id == self.id {
+                    continue;
+                }
 
-    let (tx, ty) = self.path[self.current_target];
-    let dx = tx - self.x;
-    let dy = ty - self.y;
-    let dist = (dx * dx + dy * dy).sqrt();
+                if other.is_in_intersection() {
+                    someone_inside = true;
+                    break;
+                }
+            }
 
-    if dist < self.speed * dt {
-        self.current_target += 1;
-        return;
-    }
+            // if someone inside intersection, stop BEFORE crossing stopline
+            if someone_inside {
+                if !self.is_before_stopline() && !self.is_in_intersection() {
+                    must_stop = true;
+                }
+            } else {
+                // intersection empty -> only smallest ID near stopline goes
+                let mut lowest_id = self.id;
 
-    let movement = self.speed * dt;
-    let next_x = self.x + dx / dist * movement;
-    let next_y = self.y + dy / dist * movement;
+                for other in other_vehicles {
+                    if other.id == self.id {
+                        continue;
+                    }
 
-    let mut can_move = true;
-    for other in other_vehicles {
-        if self.id == other.id { continue; }
+                    if other.is_near_stopline_zone() && !other.is_right_turn_path() {
+                        lowest_id = lowest_id.min(other.id);
+                    }
+                }
 
-        let dx2 = other.x - next_x;
-        let dy2 = other.y - next_y;
-        let next_distance = (dx2 * dx2 + dy2 * dy2).sqrt();
-
-        let min_gap = self.height as f32;
-
-        if self.is_vehicle_ahead(other) && next_distance < min_gap {
-            can_move = false;
-            break;
+                if self.id != lowest_id {
+                    if !self.is_before_stopline() && !self.is_in_intersection() {
+                        must_stop = true;
+                    }
+                }
+            }
         }
-    }
 
-    if can_move {
-        self.x = next_x;
-        self.y = next_y;
-        self.distance_traveled += movement;
-    } else {
-        self.speed = 0.0;
-    }
+        // ================== 3) APPLY SPEED ==================
+        if must_stop {
+            self.target_speed = 0.0;
+        } else {
+            self.target_speed = min_allowed_speed;
+        }
 
-    self.target_speed = self.target_speed.min(self.velocity_level.to_speed());
-}
-    pub fn is_approaching_intersection(&self) -> bool {
-        let tile_x = (self.x / TILE_SIZE as f32) as i32;
-        let tile_y = (self.y / TILE_SIZE as f32) as i32;
+        self.update_speed(dt);
 
-        let buffer = 2;
+        // ================== 4) MOVE ==================
+        let (tx, ty) = self.path[self.current_target];
+        let dx = tx - self.x;
+        let dy = ty - self.y;
+        let dist = (dx * dx + dy * dy).sqrt();
 
-        tile_x >= INTERSECTION_MIN - buffer &&
-        tile_x <= INTERSECTION_MAX + buffer &&
-        tile_y >= INTERSECTION_MIN - buffer &&
-        tile_y <= INTERSECTION_MAX + buffer
+        if dist < 1.0 {
+            self.current_target += 1;
+            return avoided_collision;
+        }
+
+        if dist < self.speed * dt {
+            self.current_target += 1;
+            return avoided_collision;
+        }
+
+        let movement = self.speed * dt;
+
+        let next_x = self.x + dx / dist * movement;
+        let next_y = self.y + dy / dist * movement;
+
+        // ================== 5) FINAL COLLISION CHECK ==================
+        let mut can_move = true;
+
+        for other in other_vehicles {
+            if self.id == other.id {
+                continue;
+            }
+
+            let dx2 = other.x - next_x;
+            let dy2 = other.y - next_y;
+            let next_distance = (dx2 * dx2 + dy2 * dy2).sqrt();
+
+            let min_gap = self.height as f32 * 0.9;
+
+            if self.is_vehicle_ahead(other) && next_distance < min_gap {
+                can_move = false;
+                avoided_collision = true;
+                break;
+            }
+        }
+
+        if can_move {
+            self.x = next_x;
+            self.y = next_y;
+            self.distance_traveled += movement;
+        } else {
+            self.speed = 0.0;
+        }
+
+        avoided_collision
     }
 
     pub fn draw(
-    &self,
-    canvas: &mut Canvas<Window>,
-    textures: &HashMap<(usize, Direction), Texture>,
-) {
-    let dir = self.facing_direction();
-    let texture = &textures[&(self.car_id, dir)];
+        &self,
+        canvas: &mut Canvas<Window>,
+        textures: &HashMap<(usize, Direction), Texture>,
+    ) {
+        let dir = self.facing_direction();
+        let texture = &textures[&(self.car_id, dir)];
 
-    use sdl2::render::TextureQuery;
-    let TextureQuery { width, height, .. } = texture.query();
+        use sdl2::render::TextureQuery;
+        let TextureQuery { width, height, .. } = texture.query();
 
-    let scale = 0.5;
-    let width_scaled = (width as f32 * scale) as u32;
+        let scale = 0.5;
+        let width_scaled = (width as f32 * scale) as u32;
+        let height_scaled = (height as f32 * scale * self.length_multiplier) as u32;
 
-    let height_scaled = (height as f32 * scale * self.length_multiplier) as u32;
+        let dst = Rect::new(
+            (self.x - width_scaled as f32 / 2.0) as i32,
+            (self.y - height_scaled as f32 / 2.0) as i32,
+            width_scaled,
+            height_scaled,
+        );
 
-    let dst = Rect::new(
-        (self.x - width_scaled as f32 / 2.0) as i32,
-        (self.y - height_scaled as f32 / 2.0) as i32,
-        width_scaled,
-        height_scaled,
-    );
-
-    canvas.copy(texture, None, dst).unwrap();
-}
-
+        canvas.copy(texture, None, dst).unwrap();
+    }
 
     pub fn facing_direction(&self) -> Direction {
         if self.current_target >= self.path.len() {
@@ -369,22 +483,19 @@ impl Vehicle {
             } else {
                 Direction::Left
             }
+        } else if dy > 0.0 {
+            Direction::Down
         } else {
-            if dy > 0.0 {
-                Direction::Down
-            } else {
-                Direction::Up
-            }
+            Direction::Up
         }
     }
 
-   pub fn is_out_of_bounds(&self) -> bool {
-    self.x < -50.0
-        || self.x > (GRID_W * TILE_SIZE + 50) as f32
-        || self.y < -50.0
-        || self.y > (GRID_H * TILE_SIZE + 50) as f32
-}
-
+    pub fn is_out_of_bounds(&self) -> bool {
+        self.x < -50.0
+            || self.x > (GRID_W * TILE_SIZE + 50) as f32
+            || self.y < -50.0
+            || self.y > (GRID_H * TILE_SIZE + 50) as f32
+    }
 
     pub fn get_intersection_time(&self) -> f32 {
         if self.intersection_exit_time > 0.0 {
