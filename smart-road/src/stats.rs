@@ -23,6 +23,9 @@ pub struct Stats {
     pub total_distance: f32,
     pub avg_intersection_time: f32,
     pub collision_avoided: u32,
+
+    // ⚠️ Near miss tracking
+    pub near_misses: u32,
 }
 
 impl Stats {
@@ -40,6 +43,7 @@ impl Stats {
             total_distance: 0.0,
             avg_intersection_time: 0.0,
             collision_avoided: 0,
+            near_misses: 0,
         }
     }
 
@@ -66,10 +70,8 @@ impl Stats {
 }
 
 pub fn show_stats_window(stats: &Stats, events: &mut sdl2::EventPump) {
-    // First print to console as backup
     print_stats_to_console(stats);
 
-    // Create SDL window for stats
     match create_stats_gui(stats, events) {
         Ok(_) => {},
         Err(e) => {
@@ -84,7 +86,7 @@ fn create_stats_gui(stats: &Stats, events: &mut sdl2::EventPump) -> Result<(), S
     let video = sdl.video()?;
 
     let window = video
-        .window("📊 Simulation Statistics", 700, 650)
+        .window("📊 Simulation Statistics", 700, 700)
         .position_centered()
         .build()
         .map_err(|e| e.to_string())?;
@@ -92,7 +94,6 @@ fn create_stats_gui(stats: &Stats, events: &mut sdl2::EventPump) -> Result<(), S
     let mut canvas = window.into_canvas().build().map_err(|e| e.to_string())?;
 
     'stats_loop: loop {
-        // Handle events
         for event in events.poll_iter() {
             match event {
                 Event::Quit { .. }
@@ -104,11 +105,9 @@ fn create_stats_gui(stats: &Stats, events: &mut sdl2::EventPump) -> Result<(), S
             }
         }
 
-        // Draw background
         canvas.set_draw_color(Color::RGB(20, 20, 30));
         canvas.clear();
 
-        // Draw stats display
         draw_text_stats(&mut canvas, stats);
 
         canvas.present();
@@ -119,15 +118,14 @@ fn create_stats_gui(stats: &Stats, events: &mut sdl2::EventPump) -> Result<(), S
 }
 
 fn draw_text_stats(canvas: &mut Canvas<Window>, stats: &Stats) {
-    let mut y = 20;
+    let mut y;
     let line_height = 30;
 
-    // Title
+    // Title bar
     canvas.set_draw_color(Color::RGB(70, 130, 180));
     canvas.fill_rect(Rect::new(0, 0, 700, 50)).ok();
     y = 70;
 
-    // All stats as simple lines
     draw_simple_line(canvas, 50, y, "SIMULATION STATISTICS", "", Color::RGB(255, 255, 255));
     y += 40;
 
@@ -140,36 +138,28 @@ fn draw_text_stats(canvas: &mut Canvas<Window>, stats: &Stats) {
     // Directions
     draw_simple_line(canvas, 50, y, "DIRECTIONS", "", Color::RGB(150, 200, 255));
     y += line_height;
-
     draw_simple_line(canvas, 70, y, "Up (South->North):", &format!("{}", stats.up), Color::RGB(100, 255, 100));
     y += line_height;
-    
     draw_simple_line(canvas, 70, y, "Down (North->South):", &format!("{}", stats.down), Color::RGB(100, 200, 255));
     y += line_height;
-    
     draw_simple_line(canvas, 70, y, "Right (West->East):", &format!("{}", stats.right), Color::RGB(255, 200, 100));
     y += line_height;
-    
     draw_simple_line(canvas, 70, y, "Left (East->West):", &format!("{}", stats.left), Color::RGB(255, 150, 200));
     y += line_height + 10;
 
     // Routes
     draw_simple_line(canvas, 50, y, "ROUTE TYPES", "", Color::RGB(150, 200, 255));
     y += line_height;
-
     draw_simple_line(canvas, 70, y, "Right Turns:", &format!("{}", stats.right_turn), Color::RGB(150, 255, 150));
     y += line_height;
-    
     draw_simple_line(canvas, 70, y, "Straight:", &format!("{}", stats.straight), Color::RGB(150, 200, 255));
     y += line_height;
-    
     draw_simple_line(canvas, 70, y, "Left Turns:", &format!("{}", stats.left_turn), Color::RGB(255, 200, 150));
     y += line_height + 10;
 
     // Physics
     draw_simple_line(canvas, 50, y, "PHYSICS DATA", "", Color::RGB(150, 200, 255));
     y += line_height;
-
     draw_simple_line(canvas, 70, y, "Total Vehicles:", &format!("{}", stats.total_vehicles), Color::RGB(180, 180, 255));
     y += line_height;
 
@@ -193,20 +183,30 @@ fn draw_text_stats(canvas: &mut Canvas<Window>, stats: &Stats) {
     }
 
     draw_simple_line(canvas, 70, y, "Collisions Avoided:", &format!("{}", stats.collision_avoided), Color::RGB(100, 255, 100));
-    
+    y += line_height + 10;
+
+    // ⚠️ Near Misses section
+    draw_simple_line(canvas, 50, y, "SAFETY", "", Color::RGB(150, 200, 255));
+    y += line_height;
+
+    let near_miss_color = if stats.near_misses == 0 {
+        Color::RGB(100, 255, 100) // green if none
+    } else {
+        Color::RGB(255, 100, 100) // red if any occurred
+    };
+    draw_simple_line(canvas, 70, y, "Near Misses:", &format!("{}", stats.near_misses), near_miss_color);
+
     // Footer
     canvas.set_draw_color(Color::RGB(50, 50, 60));
-    canvas.fill_rect(Rect::new(0, 620, 700, 30)).ok();
-    draw_simple_line(canvas, 150, 628, "Press ESC/Enter/Space to close", "", Color::RGB(150, 150, 150));
+    canvas.fill_rect(Rect::new(0, 670, 700, 30)).ok();
+    draw_simple_line(canvas, 150, 678, "Press ESC/Enter/Space to close", "", Color::RGB(150, 150, 150));
 }
 
 fn draw_simple_line(canvas: &mut Canvas<Window>, x: i32, y: i32, label: &str, value: &str, color: Color) {
-    // Draw label
     for (i, ch) in label.chars().enumerate() {
         draw_pixel_char(canvas, x + (i as i32 * 8), y, ch, Color::RGB(200, 200, 200));
     }
     
-    // Draw value (if provided)
     if !value.is_empty() {
         let value_x = x + 300;
         for (i, ch) in value.chars().enumerate() {
@@ -218,7 +218,6 @@ fn draw_simple_line(canvas: &mut Canvas<Window>, x: i32, y: i32, label: &str, va
 fn draw_pixel_char(canvas: &mut Canvas<Window>, x: i32, y: i32, ch: char, color: Color) {
     canvas.set_draw_color(color);
     
-    // 5x7 bitmap font - defining each character
     let pattern = get_char_pattern(ch);
     
     for (row, bits) in pattern.iter().enumerate() {
@@ -334,6 +333,10 @@ fn print_stats_to_console(stats: &Stats) {
         println!("║ ⏱️  Avg Intersection Time: {:<26.2} s ║", stats.avg_intersection_time);
     }
     println!("║ 🛡️  Collisions Avoided: {:<32} ║", stats.collision_avoided);
+    println!("╠═══════════════════════════════════════════════════════════╣");
+    println!("║                    ⚠️  SAFETY                             ║");
+    println!("╠═══════════════════════════════════════════════════════════╣");
+    println!("║ ⚠️  Near Misses: {:<40} ║", stats.near_misses);
     println!("╚═══════════════════════════════════════════════════════════╝");
     println!("\n✨ Visual statistics window will open momentarily...");
     println!("   Press ESC, Enter, or Space to close the window\n");

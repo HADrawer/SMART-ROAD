@@ -4,7 +4,7 @@ use rand::Rng;
 use rand::prelude::IndexedRandom;
 use sdl2::image::{InitFlag, LoadTexture};
 use std::path::PathBuf;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use sdl2::render::Texture;
 use sdl2::rect::Rect;
 use sdl2::pixels::Color;
@@ -42,24 +42,17 @@ fn build_map() -> [[Tile; GRID_W as usize]; GRID_H as usize] {
 
     for y in 0..GRID_H {
         for x in 0..GRID_W {
-            // Vertical road (3 left lanes + 3 right lanes)
             if (x >= mid - 3 && x <= mid - 1) || (x >= mid + 1 && x <= mid + 3) {
                 map[y as usize][x as usize] = Tile::VerticalRoad;
             }
-
-            // Horizontal road (3 top lanes + 3 bottom lanes)
             if (y >= mid - 3 && y <= mid - 1) || (y >= mid + 1 && y <= mid + 3) {
                 map[y as usize][x as usize] = Tile::HorizontalRoad;
             }
-
-            // Intersection
             if (x >= mid - road_half && x <= mid + road_half)
                 && (y >= mid - road_half && y <= mid + road_half)
             {
                 map[y as usize][x as usize] = Tile::Intersection;
             }
-
-            // Pavement ring
             if map[y as usize][x as usize] == Tile::Grass {
                 if (x >= mid - road_half - 1 && x <= mid + road_half + 1)
                     || (y >= mid - road_half - 1 && y <= mid + road_half + 1)
@@ -73,39 +66,33 @@ fn build_map() -> [[Tile; GRID_W as usize]; GRID_H as usize] {
     map
 }
 
-
 fn spawn_vehicle(vehicles: &mut Vec<Vehicle>, stats: &mut Stats, r: Route, dir: Direction) {
     let lane_tile = entry_lane_tile(dir, r);
 
     let (x, y): (f32, f32) = match dir {
-    Direction::Up => (
-        (lane_tile * TILE_SIZE + TILE_SIZE / 2) as f32,
-        (GRID_H as i32 * TILE_SIZE + 50) as f32,
-    ),
-    Direction::Down => (
-        (lane_tile * TILE_SIZE + TILE_SIZE / 2) as f32,
-        -50.0,
-    ),
-    Direction::Left => (
-        (GRID_W as i32 * TILE_SIZE + 50) as f32,
-        (lane_tile * TILE_SIZE + TILE_SIZE / 2) as f32,
-    ),
-    Direction::Right => (
-        -50.0,
-        (lane_tile * TILE_SIZE + TILE_SIZE / 2) as f32,
-    ),
-};
+        Direction::Up => (
+            (lane_tile * TILE_SIZE + TILE_SIZE / 2) as f32,
+            (GRID_H as i32 * TILE_SIZE + 50) as f32,
+        ),
+        Direction::Down => (
+            (lane_tile * TILE_SIZE + TILE_SIZE / 2) as f32,
+            -50.0,
+        ),
+        Direction::Left => (
+            (GRID_W as i32 * TILE_SIZE + 50) as f32,
+            (lane_tile * TILE_SIZE + TILE_SIZE / 2) as f32,
+        ),
+        Direction::Right => (
+            -50.0,
+            (lane_tile * TILE_SIZE + TILE_SIZE / 2) as f32,
+        ),
+    };
 
-
-    // Check if spawn position is too close to existing vehicles
     const MIN_SPAWN_DISTANCE: f32 = 120.0;
     for existing in vehicles.iter() {
         let dx = existing.x - x;
         let dy = existing.y - y;
-        let distance = (dx * dx + dy * dy).sqrt();
-        
-        if distance < MIN_SPAWN_DISTANCE {
-            // Too close to spawn safely
+        if (dx * dx + dy * dy).sqrt() < MIN_SPAWN_DISTANCE {
             return;
         }
     }
@@ -120,19 +107,16 @@ fn spawn_vehicle(vehicles: &mut Vec<Vehicle>, stats: &mut Stats, r: Route, dir: 
     }
 
     vehicles.push(vehicle);
-    
-    // Update statistics
+
     stats.total_vehicles += 1;
-    
-    // Track direction
+
     match dir {
         Direction::Up => stats.up += 1,
         Direction::Down => stats.down += 1,
         Direction::Left => stats.left += 1,
         Direction::Right => stats.right += 1,
     }
-    
-    // Track route
+
     match r {
         Route::Left => stats.left_turn += 1,
         Route::Straight => stats.straight += 1,
@@ -144,10 +128,13 @@ fn main() {
     let mut vehicles: Vec<Vehicle> = vec![];
     let mut stats = Stats::new();
 
+    // Tracks which vehicle ID pairs are currently inside the near-miss zone
+    let mut active_near_misses: HashSet<(usize, usize)> = HashSet::new();
+
     // === SDL INIT ===
     let sdl = sdl2::init().unwrap();
     let video = sdl.video().unwrap();
-    
+
     sdl2::image::init(InitFlag::PNG).unwrap();
     let window = video
         .window("Smart Intersection - Autonomous Vehicles", 900, 900)
@@ -158,29 +145,16 @@ fn main() {
     let mut canvas = window.into_canvas().present_vsync().build().unwrap();
     let texture_creator = canvas.texture_creator();
 
-    let grass_tex = texture_creator
-        .load_texture("assets/grass.png")
-        .unwrap();
+    let assets = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets");
 
-    let pavement_tex = texture_creator
-        .load_texture("assets/roads/pavement.png")
-        .unwrap();
-
-    let verti_road_tex = texture_creator
-        .load_texture("assets/roads/vertical-road.png")
-        .unwrap();
-
-    let hori_road_tex = texture_creator
-        .load_texture("assets/roads/horizontal-road.png")
-        .unwrap();
-
-    let intersection_tex = texture_creator
-        .load_texture("assets/roads/intersection.png")
-        .unwrap();
+    let grass_tex = texture_creator.load_texture(assets.join("grass.png")).unwrap();
+    let pavement_tex = texture_creator.load_texture(assets.join("roads/pavement.png")).unwrap();
+    let verti_road_tex = texture_creator.load_texture(assets.join("roads/vertical-road.png")).unwrap();
+    let hori_road_tex = texture_creator.load_texture(assets.join("roads/horizontal-road.png")).unwrap();
+    let intersection_tex = texture_creator.load_texture(assets.join("roads/intersection.png")).unwrap();
 
     let map = build_map();
 
-    // Load car textures
     let mut car_textures: CarTextures = HashMap::new();
 
     for car_id in 1..=4 {
@@ -195,20 +169,14 @@ fn main() {
                     Direction::Right => "right",
                 }
             );
-
-            let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("assets")
-                .join(&filename);
             let texture = texture_creator
-                .load_texture(&path)
+                .load_texture(assets.join(&filename))
                 .expect("Failed to load car texture");
-
             car_textures.insert((car_id, dir), texture);
         }
     }
 
     let mut events = sdl.event_pump().unwrap();
-
     let routes = [Route::Right, Route::Straight, Route::Left];
     let mut rng = rand::rng();
 
@@ -230,179 +198,105 @@ fn main() {
         last_frame = Instant::now();
         stats.runtime += dt;
 
-        // INPUT ------------------------------
+        // INPUT
         for evt in events.poll_iter() {
             match evt {
                 Event::Quit { .. } => break 'run,
 
-                Event::KeyDown {
-                    keycode: Some(Keycode::Escape),
-                    ..
-                } => {
+                Event::KeyDown { keycode: Some(Keycode::Escape), .. } => {
                     stats.update_from_vehicles(&vehicles);
                     show_stats_window(&stats, &mut events);
                     break 'run;
                 }
 
-                Event::KeyDown {
-                    keycode: Some(Keycode::R),
-                    repeat: false,
-                    ..
-                } => {
+                Event::KeyDown { keycode: Some(Keycode::R), repeat: false, .. } => {
                     auto_spawn = !auto_spawn;
                     println!("🔄 Auto-spawn {}", if auto_spawn { "ON" } else { "OFF" });
                 }
 
-                // Velocity control keys
-                Event::KeyDown {
-                    keycode: Some(Keycode::Num1),
-                    repeat: false,
-                    ..
-                } => {
-                    for v in &mut vehicles {
-                        v.set_velocity_level(VelocityLevel::Slow);
-                    }
+                Event::KeyDown { keycode: Some(Keycode::Num1), repeat: false, .. } => {
+                    for v in &mut vehicles { v.set_velocity_level(VelocityLevel::Slow); }
                     println!("🐌 All vehicles set to SLOW");
                 }
-
-                Event::KeyDown {
-                    keycode: Some(Keycode::Num2),
-                    repeat: false,
-                    ..
-                } => {
-                    for v in &mut vehicles {
-                        v.set_velocity_level(VelocityLevel::Medium);
-                    }
+                Event::KeyDown { keycode: Some(Keycode::Num2), repeat: false, .. } => {
+                    for v in &mut vehicles { v.set_velocity_level(VelocityLevel::Medium); }
                     println!("🚗 All vehicles set to MEDIUM");
                 }
-
-                Event::KeyDown {
-                    keycode: Some(Keycode::Num3),
-                    repeat: false,
-                    ..
-                } => {
-                    for v in &mut vehicles {
-                        v.set_velocity_level(VelocityLevel::Fast);
-                    }
+                Event::KeyDown { keycode: Some(Keycode::Num3), repeat: false, .. } => {
+                    for v in &mut vehicles { v.set_velocity_level(VelocityLevel::Fast); }
                     println!("🏎️ All vehicles set to FAST");
                 }
 
-                Event::KeyDown {
-                    keycode: Some(Keycode::Up),
-                    repeat: false,
-                    ..
-                } => {
-                    spawn_vehicle(
-                        &mut vehicles,
-                        &mut stats,
-                        routes[rng.random_range(0..3)],
-                        Direction::Up,
-                    );
+                Event::KeyDown { keycode: Some(Keycode::Up), repeat: false, .. } => {
+                    spawn_vehicle(&mut vehicles, &mut stats, routes[rng.random_range(0..3)], Direction::Up);
                 }
-                Event::KeyDown {
-                    keycode: Some(Keycode::Down),
-                    repeat: false,
-                    ..
-                } => {
-                    spawn_vehicle(
-                        &mut vehicles,
-                        &mut stats,
-                        routes[rng.random_range(0..3)],
-                        Direction::Down,
-                    );
+                Event::KeyDown { keycode: Some(Keycode::Down), repeat: false, .. } => {
+                    spawn_vehicle(&mut vehicles, &mut stats, routes[rng.random_range(0..3)], Direction::Down);
                 }
-                Event::KeyDown {
-                    keycode: Some(Keycode::Right),
-                    repeat: false,
-                    ..
-                } => {
-                    spawn_vehicle(
-                        &mut vehicles,
-                        &mut stats,
-                        routes[rng.random_range(0..3)],
-                        Direction::Right,
-                    );
+                Event::KeyDown { keycode: Some(Keycode::Right), repeat: false, .. } => {
+                    spawn_vehicle(&mut vehicles, &mut stats, routes[rng.random_range(0..3)], Direction::Right);
                 }
-                Event::KeyDown {
-                    keycode: Some(Keycode::Left),
-                    repeat: false,
-                    ..
-                } => {
-                    spawn_vehicle(
-                        &mut vehicles,
-                        &mut stats,
-                        routes[rng.random_range(0..3)],
-                        Direction::Left,
-                    );
+                Event::KeyDown { keycode: Some(Keycode::Left), repeat: false, .. } => {
+                    spawn_vehicle(&mut vehicles, &mut stats, routes[rng.random_range(0..3)], Direction::Left);
                 }
 
                 _ => {}
             }
         }
 
-        // AUTO SPAWN -------------------------
+        // AUTO SPAWN
         if auto_spawn && last_spawn.elapsed().as_secs_f32() > 0.8 {
             let r = *routes.choose(&mut rng).unwrap();
-            let d = *[
-                Direction::Up,
-                Direction::Down,
-                Direction::Left,
-                Direction::Right,
-            ]
-            .choose(&mut rng)
-            .unwrap();
-
+            let d = *[Direction::Up, Direction::Down, Direction::Left, Direction::Right]
+                .choose(&mut rng).unwrap();
             spawn_vehicle(&mut vehicles, &mut stats, r, d);
             last_spawn = Instant::now();
         }
 
-        // UPDATE VEHICLES with collision avoidance -------------------------
-        // Create a snapshot of all vehicles for collision checking
+        // UPDATE VEHICLES
         let vehicles_snapshot: Vec<Vehicle> = vehicles.clone();
-        
         for v in &mut vehicles {
             v.update(dt, &vehicles_snapshot);
         }
 
-        // const SAFE_DISTANCE: f32 = 50.0;
+        // ⚠️ NEAR-MISS DETECTION
+        const NEAR_MISS_DISTANCE: f32 = 45.0;
 
-        // for i in 0..vehicles.len() {
-        //     for j in (i + 1)..vehicles.len() {
+        for i in 0..vehicles.len() {
+            for j in (i + 1)..vehicles.len() {
+                let dx = vehicles[i].x - vehicles[j].x;
+                let dy = vehicles[i].y - vehicles[j].y;
+                let distance = (dx * dx + dy * dy).sqrt();
 
-        //         let (left, right) = vehicles.split_at_mut(j);
-        //         let v1 = &mut left[i];
-        //         let v2 = &mut right[0];
+                // Always order the pair (small_id, large_id) for consistency
+                let pair = (
+                    vehicles[i].id.min(vehicles[j].id),
+                    vehicles[i].id.max(vehicles[j].id),
+                );
 
-        //         let dx = v1.x - v2.x;
-        //         let dy = v1.y - v2.y;
-        //         let distance = (dx * dx + dy * dy).sqrt();
+                if distance < NEAR_MISS_DISTANCE {
+                    if !active_near_misses.contains(&pair) {
+                        active_near_misses.insert(pair);
+                        stats.near_misses += 1;
+                        println!(
+                            "⚠️  Near miss #{} — Vehicle {} and Vehicle {} ({:.1}px apart)",
+                            stats.near_misses, vehicles[i].id, vehicles[j].id, distance
+                        );
+                    }
+                } else {
+                    // They've separated — remove so a future re-entry counts again
+                    active_near_misses.remove(&pair);
+                }
+            }
+        }
 
-        //         if distance < SAFE_DISTANCE {
-
-        //             if v1.id < v2.id {
-        //                 v2.stopped = true;
-        //                 v1.stopped = false;
-        //             } else {
-        //                 v1.stopped = true;
-        //                 v2.stopped = false;
-        //             }
-
-        //         } else {
-        //             v1.stopped = false;
-        //             v2.stopped = false;
-        //         }
-        //     }
-        // }
-
-        // Remove out-of-bounds vehicles
+        // Remove finished vehicles and clean up their pairs from tracking
         vehicles.retain(|v| !v.finished);
-        
-        // ================= RENDER =================
-        // Grid background
+
+        // RENDER
         for y in 0..GRID_H {
             for x in 0..GRID_W {
                 let tile = map[y as usize][x as usize];
-
                 let tex = match tile {
                     Tile::Grass => &grass_tex,
                     Tile::Pavement => &pavement_tex,
@@ -410,32 +304,21 @@ fn main() {
                     Tile::HorizontalRoad => &hori_road_tex,
                     Tile::Intersection => &intersection_tex,
                 };
-
-                canvas
-                    .copy(
-                        tex,
-                        None,
-                        Rect::new(
-                            x * TILE_SIZE,
-                            y * TILE_SIZE,
-                            TILE_SIZE as u32,
-                            TILE_SIZE as u32,
-                        ),
-                    )
-                    .unwrap();
+                canvas.copy(
+                    tex,
+                    None,
+                    Rect::new(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE as u32, TILE_SIZE as u32),
+                ).unwrap();
             }
         }
 
-        // Draw cars
         for v in &vehicles {
             v.draw(&mut canvas, &car_textures);
         }
 
-        // Draw status info
         draw_status_overlay(&mut canvas, &vehicles, &stats);
 
         canvas.present();
-
         std::thread::sleep(Duration::from_millis(16));
     }
 
@@ -445,8 +328,12 @@ fn main() {
 }
 
 fn draw_status_overlay(canvas: &mut Canvas<sdl2::video::Window>, vehicles: &[Vehicle], stats: &Stats) {
-    // Draw semi-transparent overlay at top
     canvas.set_draw_color(Color::RGBA(0, 0, 0, 180));
     canvas.fill_rect(Rect::new(0, 0, 900, 80)).unwrap();
-    
+
+    // Flash red tint in the overlay if any near misses have occurred
+    if stats.near_misses > 0 {
+        canvas.set_draw_color(Color::RGBA(255, 50, 50, 60));
+        canvas.fill_rect(Rect::new(0, 0, 900, 80)).unwrap();
+    }
 }
